@@ -14,7 +14,7 @@ const viewMode = ref<"all" | "pareto" | "judge">("all");
 const sortExpr = ref("CG");
 const sortOrder = ref<"asc" | "desc">("asc");
 
-const METRICS: Record<string, string> = { G:"cost", C:"cycles", A:"area", I:"instructions", H:"height", W:"width", B:"bounding", R:"rate" };
+const METRICS: Record<string, string> = { G:"cost", C:"cycles", A:"area", I:"instructions", H:"height", W:"width", B:"boundingHex", R:"rate", S:"sum", M:"sum4" };
 
 // ── 完整指标注册表：所有可显示指标的定义 ──
 interface MetricDef {
@@ -55,8 +55,8 @@ const toggleMetric = (key: string) => {
 };
 const parseSortKeys = () => {
   let expr = sortExpr.value.toUpperCase();
-  expr = expr.replace(/S4/g, "CGAI").replace(/S/g, "CGA");
-  const chars = expr.replace(/[^GCRAIHWBX]/g, "").split("");
+  expr = expr.replace(/SUM4|S4/g, "M").replace(/SUM/g, "S");
+  const chars = expr.replace(/[^GCRMAIHWBSX]/g, "").split("");
   const result: string[] = [];
   for (let i = 0; i < chars.length; i++) {
     if (chars[i] === "X") {
@@ -230,9 +230,11 @@ const aggregatedRecords = computed(() => {
       case "area": return s.area;
       case "instructions": return s.instructions;
       case "height": return s.height ?? 0;
-      case "width": return Math.round((s.width ?? 0) * 10);
-      case "bounding": return s.boundingHex ?? 0;
-      case "rate": return Math.round((s.rate ?? 0) * 10);
+      case "width": return s.width ?? 0;
+      case "boundingHex": return s.boundingHex ?? 0;
+      case "rate": return s.rate ?? 0;
+      case "sum": return r.derived.sum;
+      case "sum4": return r.derived.sum4;
       case "x:ga": return s.cost * s.area;
       case "x:ca": return s.cycles * s.area;
       case "x:gc": return s.cost * s.cycles;
