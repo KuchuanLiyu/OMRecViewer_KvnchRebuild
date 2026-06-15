@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from "vue";
 import { OmRecordDTO } from "../types/om";
+import type { RadarChartData } from "../types/om";
 import DraftJudgePanel from "./DraftJudgePanel.vue";
+import OmRadar from "./OmRadar.vue";
+import { invoke } from "@tauri-apps/api/core";
 
 const props = defineProps<{
   records: OmRecordDTO[];
@@ -256,11 +259,58 @@ const puzzleInfo = computed(() => {
 });
 
 const selectedRecord = ref<OmRecordDTO | null>(null);
+const recordRadarChart = ref<RadarChartData | null>(null);
+const radarLoading = ref(false);
+const RADAR_HIDDEN_KEY = "om_radar_hidden_metrics";
+const radarHiddenMetrics = ref<Set<string>>(new Set(
+  JSON.parse(localStorage.getItem(RADAR_HIDDEN_KEY) || "[]")
+));
+
+function toggleRadarMetric(k: string) {
+  const next = new Set(radarHiddenMetrics.value);
+  if (next.has(k)) next.delete(k); else next.add(k);
+  radarHiddenMetrics.value = next;
+  localStorage.setItem(RADAR_HIDDEN_KEY, JSON.stringify([...next]));
+}
+
+// 过滤后的雷达图数据
+const filteredRadarChart = computed(() => {
+  const src = recordRadarChart.value;
+  if (!src) return null;
+  const axes: Record<string, any> = {};
+  const draftRaw: Record<string, number> = {};
+  for (const k of Object.keys(src.axes)) {
+    if (!radarHiddenMetrics.value.has(k)) {
+      axes[k] = src.axes[k];
+      if (src.draftRaw[k] !== undefined) draftRaw[k] = src.draftRaw[k];
+    }
+  }
+  return { mode: src.mode, axes, draftRaw } as RadarChartData;
+});
 
 const onKeydown = (e: KeyboardEvent) => { if (e.key === "Escape") selectedRecord.value = null; };
 watch(selectedRecord, (v) => {
   if (v) document.addEventListener("keydown", onKeydown);
   else document.removeEventListener("keydown", onKeydown);
+});
+// 🚀 详情弹窗雷达图按需加载
+watch(selectedRecord, async (record) => {
+  recordRadarChart.value = null;
+  if (!record || !record.score) return;
+  radarLoading.value = true;
+  try {
+    const hasInst = (record.score.instructions ?? 0) > 0;
+    const mode = hasInst ? "GCAI" : "GCA";
+    recordRadarChart.value = await invoke<RadarChartData>("get_record_radar_chart", {
+      recordScore: record.score,
+      puzzleId: record.puzzle?.id || "",
+      mode,
+    });
+  } catch (err) {
+    console.error("Failed to load record radar:", err);
+  } finally {
+    radarLoading.value = false;
+  }
 });
 onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 
@@ -357,7 +407,7 @@ const handleHeaderClick = (expr: string) => {
     <div class="matrix-container">
       <!-- PARETO JUDGE 视图 -->
       <div v-if="viewMode === 'judge'" class="judge-view-wrapper">
-        <DraftJudgePanel :puzzle-id="puzzleInfo?.id || ''" />
+        <DraftJudgePanel :puzzle-id="puzzleInfo?.id || ''" :puzzle-name="puzzleInfo?.name || ''" />
       </div>
       <!-- 记录表格视图 -->
       <table v-else class="matrix-table">
@@ -438,6 +488,20 @@ const handleHeaderClick = (expr: string) => {
             <span class="detail-label">SOLUTION</span>
             <code class="detail-link">{{ selectedRecord.solution || "—" }}</code>
             <button class="copy-btn" @click="copyToClipboard(selectedRecord.solution!)" :disabled="!selectedRecord.solution">COPY</button>
+          </div>
+          <!-- 雷达图维度选择 -->
+          <div v-if="recordRadarChart" class="radar-metric-toggles">
+            <label v-for="k in Object.keys(recordRadarChart.axes)" :key="k"
+              class="radar-chip" :class="{ off: radarHiddenMetrics.has(k) }"
+              @click="toggleRadarMetric(k)">
+              {{ k }}
+            </label>
+          </div>
+          <!-- 雷达图 -->
+          <div class="detail-radar-zone">
+            <div v-if="radarLoading" class="radar-skeleton">LOADING QUANTUM PROFILE...</div>
+            <OmRadar v-else-if="filteredRadarChart" :chartData="filteredRadarChart" :puzzleName="selectedRecord.puzzle?.displayName || ''" />
+            <div v-else class="radar-skeleton">UNAVAILABLE</div>
           </div>
         </div>
       </div>
@@ -527,4 +591,11 @@ th { background-color: #161a22; color: #4e5d78; font-size: 0.75rem; font-weight:
 .copy-btn:disabled { opacity: 0.3; cursor: default; }
 .copy-btn:disabled:hover { color: #4e5d78; border-color: #262e3f; }
 .muted { color: #4e5d78; font-style: italic; }
+
+/* ── 雷达图区域 ── */
+.detail-radar-zone { margin-top: 16px; display: flex; justify-content: center; }
+.radar-skeleton { width: 300px; height: 80px; display: flex; align-items: center; justify-content: center; border: 1px dashed #262e3f; color: var(--color-text-muted); font-size: 0.72rem; border-radius: 4px; }
+.radar-metric-toggles { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; justify-content: center; }
+.radar-chip { background: rgba(0,180,216,0.08); border: 1px solid #00b4d8; color: #00b4d8; padding: 1px 7px; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 0.65rem; user-select: none; }
+.radar-chip.off { background: transparent; border-color: #262e3f; color: #4e5d78; }
 </style>

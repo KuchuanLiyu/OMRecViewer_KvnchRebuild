@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { ParetoJudgeStatus, JudgeResult, ParetoBeatenReport, BeatenMetricDiff } from "../types/om";
+import type { ParetoJudgeStatus, JudgeResult, ParetoBeatenReport, BeatenMetricDiff, RadarChartData } from "../types/om";
+import OmRadar from "./OmRadar.vue";
 
-const props = defineProps<{ puzzleId: string }>();
+const props = defineProps<{ puzzleId: string; puzzleName: string }>();
 
 const metricPool = [
   { id: "cost", label: "Cost (G)" }, { id: "cycles", label: "Cycles (C)" },
@@ -31,6 +32,7 @@ const status = ref<ParetoJudgeStatus | null>(null); // null = 尚未判定
 const totalCompared = ref(0);
 const reports = ref<ParetoBeatenReport[]>([]);
 const errorMsg = ref<string | null>(null);
+const radarChart = ref<RadarChartData | null>(null);
 
 // ── 草稿缓存：按 puzzleId 保存输入，切换关卡后恢复 ──
 interface DraftSnapshot {
@@ -72,7 +74,7 @@ function restoreDraft(puzzleId: string) {
 
 // ── 关卡切换：恢复草稿 + 清空判定 ──
 watch(() => props.puzzleId, (newId) => {
-  status.value = null; reports.value = []; totalCompared.value = 0; errorMsg.value = null;
+  status.value = null; reports.value = []; totalCompared.value = 0; errorMsg.value = null; radarChart.value = null;
   if (newId) restoreDraft(newId);
 }, { immediate: true });
 
@@ -112,6 +114,7 @@ const doJudge = async () => {
     status.value = result.status;
     totalCompared.value = result.totalCompared;
     reports.value = result.reports;
+    radarChart.value = result.radarChart;
     errorMsg.value = null;
   } catch (err) {
     if (myVersion === judgeVersion) { errorMsg.value = String(err); status.value = null; }
@@ -280,6 +283,9 @@ const allFilled = (): boolean => activeMetrics.value.every(m => {
       <p v-if="status === 'Unknown'" class="msg warn">… FILL MORE METRICS TO DETERMINE STATUS</p>
       <p v-if="status === 'AlreadyPresented'" class="msg warn">◆ DUPLICATE — THIS EXACT COMBINATION ALREADY EXISTS</p>
 
+      <!-- 雷达图 -->
+      <OmRadar v-if="radarChart" :chartData="radarChart" :puzzleName="props.puzzleName" class="radar-section" />
+
       <!-- NothingBeaten：逐条对手展示 -->
       <div v-if="status === 'NothingBeaten' && reports.length > 0" class="beaten-zone">
         <p class="beaten-title">❌ DOMINATED BY {{ reports.length }} RECORD{{ reports.length > 1 ? 'S' : '' }}</p>
@@ -426,4 +432,5 @@ const allFilled = (): boolean => activeMetrics.value.every(m => {
 .gap-tied { color: #4e5d78; font-size: 0.68rem; letter-spacing: 0.05em; }
 
 .err { color: #ff4a4a; font-size: 0.7rem; margin-top: 8px; }
+.radar-section { margin-top: 12px; }
 </style>

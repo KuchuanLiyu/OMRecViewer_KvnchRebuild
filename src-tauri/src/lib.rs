@@ -306,6 +306,22 @@ pub enum InputMode { GCA, GCAI }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ParetoJudgeStatus { Ok, Unknown, UnknownBreaking, AlreadyPresented, NothingBeaten }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RadarAxisMeta {
+    pub min_val: f64,
+    pub sum_val: f64,
+    pub sorted_vals: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RadarChartData {
+    pub mode: String,
+    pub axes: std::collections::HashMap<String, RadarAxisMeta>,
+    pub draft_raw: std::collections::HashMap<String, f64>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OmDraftInput {
@@ -340,6 +356,7 @@ pub struct ParetoBeatenReport {
 pub struct JudgeResult {
     pub status: ParetoJudgeStatus, pub total_compared: usize,
     pub reports: Vec<ParetoBeatenReport>,
+    pub radar_chart: Option<RadarChartData>,
 }
 
 // ================= BEST 标杆持久化 =================
@@ -532,7 +549,7 @@ async fn judge_draft(
 ) -> Result<JudgeResult, String> {
     let dims: Vec<&str> = draft.active_metrics.iter().map(|s| s.as_str()).collect();
     if dims.is_empty() {
-        return Ok(JudgeResult { status: ParetoJudgeStatus::Unknown, total_compared: 0, reports: vec![] });
+        return Ok(JudgeResult { status: ParetoJudgeStatus::Unknown, total_compared: 0, reports: vec![], radar_chart: None });
     }
 
     // 1. 统计已填维度
@@ -550,7 +567,7 @@ async fn judge_draft(
     }).count();
     let is_all_filled = expected == filled;
     if filled == 0 {
-        return Ok(JudgeResult { status: ParetoJudgeStatus::Unknown, total_compared: 0, reports: vec![] });
+        return Ok(JudgeResult { status: ParetoJudgeStatus::Unknown, total_compared: 0, reports: vec![], radar_chart: None });
     }
 
     // 2. 捞取当前关卡的有效对手 → clone 后立即释放锁，防止阻塞
@@ -570,8 +587,107 @@ async fn judge_draft(
     let total = candidates.len();
 
     if total == 0 {
-        return Ok(JudgeResult { status: ParetoJudgeStatus::Ok, total_compared: 0, reports: vec![] });
+        return Ok(JudgeResult { status: ParetoJudgeStatus::Ok, total_compared: 0, reports: vec![], radar_chart: None });
     }
+
+    // =========================================================================
+    // 🚀 雷达图计算（所有判定路径共享）
+    // =========================================================================
+    let radar_chart = {
+        let all_keys = vec!["cost", "cycles", "area", "instructions", "height", "width", "boundingHex", "rate"];
+        let mut active_keys = Vec::new();
+
+        for k in all_keys {
+            let has_data = candidates.iter().any(|r| {
+                if let Some(s) = &r.score {
+                    match k {
+                        "cost" | "cycles" | "area" | "instructions" => true,
+                        "height" => s.height.is_some(),
+                        "width" => s.width.is_some(),
+                        "boundingHex" => s.bounding_hex.is_some(),
+                        "rate" => s.rate.is_some(),
+                        _ => false,
+                    }
+                } else { false }
+            });
+            if has_data && dims.contains(&k) {
+                active_keys.push(k);
+            }
+        }
+
+        // x_min: 各指标排序取最小值
+        let mut x_mins: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        for &k in &active_keys {
+            let mut vals: Vec<f64> = candidates.iter().filter_map(|r| r.score.as_ref()).filter_map(|s| match k {
+                "cost" => Some(s.cost as f64),
+                "cycles" => Some(s.cycles as f64),
+                "area" => Some(s.area as f64),
+                "instructions" => Some(s.instructions as f64),
+                "height" => s.height.map(|v| v as f64),
+                "width" => s.width,
+                "boundingHex" => s.bounding_hex.map(|v| v as f64),
+                "rate" => s.rate,
+                _ => None,
+            }).collect();
+            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            x_mins.insert(k.to_string(), *vals.first().unwrap_or(&1.0));
+        }
+
+        // x_sum: GCAI 来自 Sum4 最优解，H/W/B/R 用中位数
+        let sum_best = candidates.iter().filter_map(|r| r.score.as_ref()).min_by_key(|s| {
+            s.cost + s.cycles + s.area + s.instructions
+        });
+
+        let mut axes_meta = std::collections::HashMap::new();
+        let mut draft_raw = std::collections::HashMap::new();
+
+        for &k in &active_keys {
+            let x_min = *x_mins.get(k).unwrap_or(&1.0);
+            let x_sum: f64 = match k {
+                "cost" => sum_best.map(|s| s.cost as f64).unwrap_or(x_min),
+                "cycles" => sum_best.map(|s| s.cycles as f64).unwrap_or(x_min),
+                "area" => sum_best.map(|s| s.area as f64).unwrap_or(x_min),
+                "instructions" => sum_best.map(|s| s.instructions as f64).unwrap_or(x_min),
+                "height" => sum_best.and_then(|s| s.height).map(|v| v as f64).unwrap_or(x_min),
+                "width" => sum_best.and_then(|s| s.width).unwrap_or(x_min),
+                "boundingHex" => sum_best.and_then(|s| s.bounding_hex).map(|v| v as f64).unwrap_or(x_min),
+                "rate" => sum_best.and_then(|s| s.rate).unwrap_or(x_min),
+                _ => x_min,
+            };
+
+            let mut sorted_vals: Vec<f64> = candidates.iter().filter_map(|r| r.score.as_ref()).filter_map(|s| match k {
+                "cost" => Some(s.cost as f64),
+                "cycles" => Some(s.cycles as f64),
+                "area" => Some(s.area as f64),
+                "instructions" => Some(s.instructions as f64),
+                "height" => s.height.map(|v| v as f64),
+                "width" => s.width,
+                "boundingHex" => s.bounding_hex.map(|v| v as f64),
+                "rate" => s.rate,
+                _ => None,
+            }).collect();
+            sorted_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+            axes_meta.insert(k.to_string(), RadarAxisMeta { min_val: x_min, sum_val: x_sum, sorted_vals });
+
+            if let Some(d_val) = match k {
+                "cost" => draft.cost.map(|v| v as f64),
+                "cycles" => draft.cycles.map(|v| v as f64),
+                "area" => draft.area.map(|v| v as f64),
+                "instructions" => draft.instructions.map(|v| v as f64),
+                "height" => draft.height.map(|v| v as f64),
+                "width" => draft.width,
+                "boundingHex" => draft.bounding_hex.map(|v| v as f64),
+                "rate" => draft.rate,
+                _ => None,
+            } {
+                draft_raw.insert(k.to_string(), d_val);
+            }
+        }
+
+        if active_keys.is_empty() { None }
+        else { Some(RadarChartData { mode: format!("DYNAMIC_{}", active_keys.len()), axes: axes_meta, draft_raw }) }
+    };
 
     // 3. 【第一关】支配力筛查 — 只要有一条记录全面压制 Draft，就是 NothingBeaten
     let mut dominators: Vec<&OmRecordDTO> = Vec::new();
@@ -584,16 +700,16 @@ async fn judge_draft(
     if !dominators.is_empty() {
         let reports: Vec<ParetoBeatenReport> = dominators.iter()
             .map(|d| build_beaten_report(&draft, d)).collect();
-        return Ok(JudgeResult { status: ParetoJudgeStatus::NothingBeaten, total_compared: total, reports });
+        return Ok(JudgeResult { status: ParetoJudgeStatus::NothingBeaten, total_compared: total, reports, radar_chart });
     }
 
     // 4. 【第二关】未填满 → 检查是否打破全局极限
     if !is_all_filled {
         let breaking = does_draft_break_global_best(&draft, &dims, &candidates);
         if breaking {
-            return Ok(JudgeResult { status: ParetoJudgeStatus::UnknownBreaking, total_compared: total, reports: vec![] });
+            return Ok(JudgeResult { status: ParetoJudgeStatus::UnknownBreaking, total_compared: total, reports: vec![], radar_chart });
         }
-        return Ok(JudgeResult { status: ParetoJudgeStatus::Unknown, total_compared: total, reports: vec![] });
+        return Ok(JudgeResult { status: ParetoJudgeStatus::Unknown, total_compared: total, reports: vec![], radar_chart });
     }
 
     // 5. 【第三关】已填满、未被支配 → 检查是否撞车
@@ -601,11 +717,11 @@ async fn judge_draft(
         is_exact_match(&draft, r.score.as_ref().unwrap(), &dims)
     });
     if exact_match {
-        return Ok(JudgeResult { status: ParetoJudgeStatus::AlreadyPresented, total_compared: total, reports: vec![] });
+        return Ok(JudgeResult { status: ParetoJudgeStatus::AlreadyPresented, total_compared: total, reports: vec![], radar_chart });
     }
 
     // 6. 填满 + 未被支配 + 未撞车 → 帕累托前沿突破！
-    Ok(JudgeResult { status: ParetoJudgeStatus::Ok, total_compared: total, reports: vec![] })
+    Ok(JudgeResult { status: ParetoJudgeStatus::Ok, total_compared: total, reports: vec![], radar_chart })
 }
 
 // ================= 5. ZLBB 跨游戏模糊检索提示命令 =================
@@ -689,6 +805,128 @@ async fn get_live_puzzle_suggestions(
 #[tauri::command]
 fn check_boot_ready(state: tauri::State<'_, MemoryState>) -> bool {
     state.boot_ready.load(std::sync::atomic::Ordering::Acquire)
+}
+
+// ================= 历史记录雷达图独立查询 =================
+
+#[tauri::command]
+async fn get_record_radar_chart(
+    record_score: OmScoreDTO,
+    puzzle_id: String,
+    _mode: String,
+    state: tauri::State<'_, MemoryState>,
+) -> Result<RadarChartData, String> {
+    let candidates: Vec<OmRecordDTO> = {
+        let vault = state.record_vault.lock().unwrap();
+        vault.iter().filter(|r| {
+            r.puzzle.as_ref().map_or(false, |p| p.id == puzzle_id)
+                && r.score.is_some()
+                && {
+                    let s = r.score.as_ref().unwrap();
+                    s.overlap == record_score.overlap && (!record_score.trackless || s.trackless)
+                }
+        }).cloned().collect()
+    };
+
+    if candidates.is_empty() {
+        return Err("No candidates found for this puzzle to compute benchmark".to_string());
+    }
+
+    let all_keys = vec!["cost", "cycles", "area", "instructions", "height", "width", "boundingHex", "rate"];
+    let mut active_keys = Vec::new();
+
+    for k in all_keys {
+        let has_data = candidates.iter().any(|r| {
+            if let Some(s) = &r.score {
+                match k {
+                    "cost" | "cycles" | "area" | "instructions" => true,
+                    "height" => s.height.is_some(),
+                    "width" => s.width.is_some(),
+                    "boundingHex" => s.bounding_hex.is_some(),
+                    "rate" => s.rate.is_some(),
+                    _ => false,
+                }
+            } else { false }
+        });
+        if has_data {
+            active_keys.push(k);
+        }
+    }
+
+    // x_min: 排序取最小值
+    let mut x_mins: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for &k in &active_keys {
+        let mut vals: Vec<f64> = candidates.iter().filter_map(|r| r.score.as_ref()).filter_map(|s| match k {
+            "cost" => Some(s.cost as f64),
+            "cycles" => Some(s.cycles as f64),
+            "area" => Some(s.area as f64),
+            "instructions" => Some(s.instructions as f64),
+            "height" => s.height.map(|v| v as f64),
+            "width" => s.width,
+            "boundingHex" => s.bounding_hex.map(|v| v as f64),
+            "rate" => s.rate,
+            _ => None,
+        }).collect();
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        x_mins.insert(k.to_string(), *vals.first().unwrap_or(&1.0));
+    }
+
+    // x_sum: GCAI 来自 Sum4 最优解，其余用中位数
+    let sum_best = candidates.iter().filter_map(|r| r.score.as_ref()).min_by_key(|s| {
+        s.cost + s.cycles + s.area + s.instructions
+    });
+
+    let mut axes_meta = std::collections::HashMap::new();
+    let mut draft_raw = std::collections::HashMap::new();
+
+    for &k in &active_keys {
+        let x_min = *x_mins.get(k).unwrap_or(&1.0);
+        let x_sum: f64 = match k {
+            "cost" => sum_best.map(|s| s.cost as f64).unwrap_or(x_min),
+            "cycles" => sum_best.map(|s| s.cycles as f64).unwrap_or(x_min),
+            "area" => sum_best.map(|s| s.area as f64).unwrap_or(x_min),
+            "instructions" => sum_best.map(|s| s.instructions as f64).unwrap_or(x_min),
+            "height" => sum_best.and_then(|s| s.height).map(|v| v as f64).unwrap_or(x_min),
+            "width" => sum_best.and_then(|s| s.width).unwrap_or(x_min),
+            "boundingHex" => sum_best.and_then(|s| s.bounding_hex).map(|v| v as f64).unwrap_or(x_min),
+            "rate" => sum_best.and_then(|s| s.rate).unwrap_or(x_min),
+            _ => x_min,
+        };
+
+        let mut sorted_vals: Vec<f64> = candidates.iter().filter_map(|r| r.score.as_ref()).filter_map(|s| match k {
+            "cost" => Some(s.cost as f64),
+            "cycles" => Some(s.cycles as f64),
+            "area" => Some(s.area as f64),
+            "instructions" => Some(s.instructions as f64),
+            "height" => s.height.map(|v| v as f64),
+            "width" => s.width,
+            "boundingHex" => s.bounding_hex.map(|v| v as f64),
+            "rate" => s.rate,
+            _ => None,
+        }).collect();
+        sorted_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        axes_meta.insert(k.to_string(), RadarAxisMeta { min_val: x_min, sum_val: x_sum, sorted_vals });
+
+        let r_val = match k {
+            "cost" => record_score.cost as f64,
+            "cycles" => record_score.cycles as f64,
+            "area" => record_score.area as f64,
+            "instructions" => record_score.instructions as f64,
+            "height" => record_score.height.map(|v| v as f64).unwrap_or(x_min),
+            "width" => record_score.width.unwrap_or(x_min),
+            "boundingHex" => record_score.bounding_hex.map(|v| v as f64).unwrap_or(x_min),
+            "rate" => record_score.rate.unwrap_or(x_min),
+            _ => x_min,
+        };
+        draft_raw.insert(k.to_string(), r_val);
+    }
+
+    return Ok(RadarChartData {
+        mode: format!("DYNAMIC_{}", active_keys.len()),
+        axes: axes_meta,
+        draft_raw,
+    });
 }
 
 // ================= 6. App 启动阶段 =================
@@ -798,7 +1036,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![search_om_records, sync_incremental, judge_draft, save_puzzle_best, load_puzzle_best, get_live_puzzle_suggestions, check_boot_ready, get_cache_path, get_cache_info])
+        .invoke_handler(tauri::generate_handler![search_om_records, sync_incremental, judge_draft, save_puzzle_best, load_puzzle_best, get_live_puzzle_suggestions, check_boot_ready, get_cache_path, get_cache_info, get_record_radar_chart])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

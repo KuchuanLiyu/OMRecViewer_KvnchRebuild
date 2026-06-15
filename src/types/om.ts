@@ -80,10 +80,23 @@ export interface ParetoBeatenReport {
   rateDiff: BeatenMetricDiff | null;
 }
 
+export interface RadarAxisMeta {
+  minVal: number;
+  sumVal: number;
+  sortedVals: number[];
+}
+
+export interface RadarChartData {
+  mode: "GCA" | "GCAI";
+  axes: Record<string, RadarAxisMeta>;
+  draftRaw: Record<string, number>;
+}
+
 export interface JudgeResult {
   status: ParetoJudgeStatus;
   totalCompared: number;
   reports: ParetoBeatenReport[];
+  radarChart: RadarChartData | null;
 }
 
 // ==================== 增量同步 ====================
