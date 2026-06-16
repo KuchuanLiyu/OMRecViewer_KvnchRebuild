@@ -22,16 +22,16 @@ const svgRef = ref<SVGElement | null>(null);
 const isCopying = ref(false);
 
 const SCHEMES = ["cyan", "amber", "purple", "emerald", "crimson", "ocean"] as const;
-const schemeIndex = ref(0);
+const schemeIndex = ref(1); // 默认 amber
 const colorScheme = computed(() => SCHEMES[schemeIndex.value]);
 
 function cycleScheme() {
   schemeIndex.value = (schemeIndex.value + 1) % SCHEMES.length;
 }
 
-const CENTER_X = 150;
-const CENTER_Y = 165;
-const MAX_RADIUS = 90;
+const CENTER_X = 240;
+const CENTER_Y = 260;
+const MAX_RADIUS = 155;
 
 /** 幂函数（Gamma 模型）全段平滑拟合
  *  xMin → 1.0,  xSum → 0.75,  公式: 1 - 0.25 * ((x-xMin)/(xSum-xMin))^γ */
@@ -118,15 +118,15 @@ async function copyChartToClipboard() {
     // 动态读取当前配色
     const cs = getComputedStyle(svgElement);
     const cssStyles = `
-      text { font-family: monospace; }
-      .title-text { fill: ${cs.getPropertyValue("--radar-primary")}; font-size: 11px; font-weight: bold; }
+      text { font-family: Georgia, 'Times New Roman', serif; }
+      .title-text { fill: ${cs.getPropertyValue("--radar-primary")}; font-size: 12px; font-weight: bold; font-family: Georgia, serif; letter-spacing: 1px; }
       .grid-ring { fill: none; stroke: ${cs.getPropertyValue("--radar-grid")}; stroke-width: 1; }
       .grid-ring-dim { opacity: 0.4; }
       .sum-baseline-ring { fill: none; stroke: ${cs.getPropertyValue("--radar-primary")}; stroke-dasharray: 4 3; stroke-width: 1.3; opacity: 0.8; }
       .axis-line { stroke: ${cs.getPropertyValue("--radar-axis")}; stroke-width: 0.8; opacity: 0.7; }
-      .axis-label { fill: ${cs.getPropertyValue("--radar-label")}; font-size: 8.5px; }
+      .axis-label { fill: ${cs.getPropertyValue("--radar-label")}; font-size: 9px; font-family: Georgia, serif; }
       .draft-poly { fill: ${cs.getPropertyValue("--radar-poly-fill")}; stroke: ${cs.getPropertyValue("--radar-poly-stroke")}; stroke-width: 2; stroke-linejoin: round; }
-      .vertex-dot { fill: ${cs.getPropertyValue("--radar-accent")}; stroke: #0c101a; stroke-width: 0.8; opacity: 0.7; }
+      .vertex-dot { fill: ${cs.getPropertyValue("--radar-accent")}; stroke: #1a1a1a; stroke-width: 0.8; opacity: 0.7; }
       .center-dot { fill: ${cs.getPropertyValue("--radar-primary")}; opacity: 0.5; }
     `;
     svgString = svgString.replace(/<svg[^>]*>/, `$&<style>${cssStyles}</style>`);
@@ -141,8 +141,8 @@ async function copyChartToClipboard() {
     image.onload = async () => {
       const SCALE_FACTOR = 3;
       const canvas = document.createElement("canvas");
-      canvas.width = 300 * SCALE_FACTOR;
-      canvas.height = 300 * SCALE_FACTOR;
+      canvas.width = 480 * SCALE_FACTOR;
+      canvas.height = 480 * SCALE_FACTOR;
       const context = canvas.getContext("2d");
 
       if (context) {
@@ -180,11 +180,11 @@ async function copyChartToClipboard() {
       </div>
     </div>
 
-    <svg width="300" height="300" ref="svgRef" class="radar-svg">
+    <svg viewBox="0 0 480 480" width="480" height="480" ref="svgRef" class="radar-svg">
       <defs>
         <radialGradient id="bg-grad" cx="50%" cy="55%" r="50%">
-          <stop offset="0%" stop-color="#141c26" />
-          <stop offset="100%" stop-color="#0c101a" />
+          <stop offset="0%" stop-color="#2d2d2d" />
+          <stop offset="100%" stop-color="#1a1a1a" />
         </radialGradient>
         <linearGradient id="poly-grad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stop-color="var(--radar-accent)" stop-opacity="0.25" />
@@ -195,9 +195,9 @@ async function copyChartToClipboard() {
           <feComposite in="SourceGraphic" in2="blur" operator="over" />
         </filter>
       </defs>
-      <rect width="300" height="300" fill="url(#bg-grad)" />
+      <rect width="480" height="480" fill="url(#bg-grad)" />
 
-      <text x="15" y="22" class="title-text">{{ puzzleName.toUpperCase() }}</text>
+      <text x="20" y="28" class="title-text">{{ puzzleName.toUpperCase() }}</text>
 
       <polygon
         v-for="ring in [0.25, 0.5, 0.75, 1.0]"
@@ -221,13 +221,13 @@ async function copyChartToClipboard() {
 </template>
 
 <style scoped>
-.radar-wrapper { display: flex; flex-direction: column; background: #0c101a; border: 1px solid #262e3f; border-radius: 4px; padding: 12px; width: 300px; user-select: none;
-  --radar-accent: #00f5d4; --radar-primary: #00b4d8;
-  --radar-grid: #161b26; --radar-axis: #1f2635; --radar-label: #4e5d78;
-  --radar-poly-fill: rgba(0, 245, 212, 0.14); --radar-poly-stroke: var(--radar-accent);
+.radar-wrapper { display: flex; flex-direction: column; background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: 4px; padding: 16px; width: 480px; flex-shrink: 0; user-select: none;
+  --radar-accent: #e0c070; --radar-primary: #c0a060;
+  --radar-grid: #2d2d2d; --radar-axis: #3d3d3d; --radar-label: #6a6a6a;
+  --radar-poly-fill: rgba(224, 192, 112, 0.14); --radar-poly-stroke: var(--radar-accent);
 }
 .radar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.panel-tag { font-size: 0.62rem; color: var(--color-text-muted); font-weight: bold; letter-spacing: 0.5px; }
+.panel-tag { font-size: 0.6rem; color: var(--color-text-muted); font-weight: bold; letter-spacing: 0.5px; font-family: 'Crimson Text', serif; }
 .radar-actions { display: flex; gap: 4px; align-items: center; }
 .btn-scheme { background: transparent; border: 1px solid #4e5d78; color: #4e5d78; font-family: monospace; font-size: 0.55rem; padding: 2px 5px; border-radius: 3px; cursor: pointer; text-transform: uppercase; }
 .btn-scheme:hover { border-color: #fff; color: #fff; }
@@ -235,25 +235,25 @@ async function copyChartToClipboard() {
 .btn-copy:hover { background: var(--color-primary); color: #000; }
 .btn-copy:disabled { opacity: 0.5; }
 
-.radar-svg { overflow: visible; }
+.radar-svg { width: 100%; overflow: visible; }
 .center-dot { fill: var(--radar-primary); opacity: 0.5; }
-.title-text { fill: var(--radar-primary); font-size: 11px; font-weight: bold; font-family: monospace; letter-spacing: 1px; opacity: 0.9; }
+.title-text { fill: var(--radar-primary); font-size: 11px; font-weight: bold; font-family: 'Cinzel', Georgia, serif; letter-spacing: 1px; opacity: 0.9; }
 .grid-ring { fill: none; stroke: var(--radar-grid); stroke-width: 1; }
 .grid-ring-dim { opacity: 0.4; }
 .sum-baseline-ring { stroke: var(--radar-primary); stroke-dasharray: 4 3; stroke-width: 1.3; opacity: 0.8; }
 .axis-line { stroke: var(--radar-axis); stroke-width: 0.8; opacity: 0.7; }
-.axis-label { fill: var(--radar-label); font-size: 8.5px; font-family: monospace; text-anchor: middle; dominant-baseline: middle; }
+.axis-label { fill: var(--radar-label); font-size: 8.5px; font-family: 'Crimson Text', Georgia, serif; text-anchor: middle; dominant-baseline: middle; }
 .draft-poly { fill: url(#poly-grad); stroke: var(--radar-poly-stroke); stroke-width: 2; stroke-linejoin: round; }
-.vertex-dot { fill: var(--radar-accent); stroke: #0c101a; stroke-width: 0.8; opacity: 0.7; }
+.vertex-dot { fill: var(--radar-accent); stroke: var(--bg-deep); stroke-width: 0.8; opacity: 0.7; }
 
 /* ── 配色方案 ── */
 .radar-wrapper[data-scheme="cyan"] {
-  --radar-accent: #00f5d4; --radar-primary: #00b4d8;
-  --radar-poly-fill: rgba(0, 245, 212, 0.14);
+  --radar-accent: #90d0d8; --radar-primary: #70a0a8;
+  --radar-poly-fill: rgba(144, 208, 216, 0.14);
 }
 .radar-wrapper[data-scheme="amber"] {
-  --radar-accent: #ffb703; --radar-primary: #fb8500;
-  --radar-poly-fill: rgba(255, 183, 3, 0.14);
+  --radar-accent: #e0c070; --radar-primary: #c0a060;
+  --radar-poly-fill: rgba(224, 192, 112, 0.14);
 }
 .radar-wrapper[data-scheme="purple"] {
   --radar-accent: #c084fc; --radar-primary: #a78bfa;
@@ -264,7 +264,6 @@ async function copyChartToClipboard() {
   --radar-poly-fill: rgba(110, 231, 183, 0.14);
 }
 
-.title-text { fill: var(--radar-primary); font-size: 12px; font-weight: bold; font-family: monospace; letter-spacing: 0.5px; }
 .grid-ring { fill: none; stroke: var(--radar-grid); stroke-width: 1; }
 .sum-baseline-ring { stroke: var(--radar-primary); stroke-dasharray: 4 3; stroke-width: 1.2; }
 .axis-line { stroke: var(--radar-axis); stroke-width: 1; }

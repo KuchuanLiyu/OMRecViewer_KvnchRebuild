@@ -348,11 +348,11 @@ const allFilled = (): boolean => activeMetrics.value.every(m => {
 <style scoped>
 .judge-panel { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; font-family: monospace; }
 .judge-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
-.judge-title { color: var(--color-primary); font-size: 0.82rem; font-weight: bold; }
+.judge-title { color: var(--color-primary); font-size: 0.82rem; font-weight: bold; font-family: 'Cinzel', serif; letter-spacing: 0.5px; }
 .judge-puzzle { color: var(--color-accent); font-size: 0.72rem; }
 
 .chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 10px; }
-.chip-label { color: var(--color-text-muted); font-size: 0.68rem; font-weight: bold; }
+.chip-label { color: var(--color-text-muted); font-size: 0.68rem; font-weight: bold; font-family: 'Crimson Text', serif; }
 .chip { background: var(--bg-deep); border: 1px solid var(--border-color); color: var(--color-text-muted); padding: 2px 7px; border-radius: 3px; cursor: pointer; font-size: 0.68rem; }
 .chip input { display: none; }
 .chip.checked { background: rgba(224,192,112,0.08); border-color: var(--color-accent); color: var(--color-accent); font-weight: bold; }

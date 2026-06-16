@@ -208,13 +208,13 @@ const closeSuggestions = () => {
     </aside>
     <main class="main-workspace">
       <header class="workspace-header">
-        <div class="breadcrumb">OM RECORD</div>
-        <div class="timestamp">SYS_STATUS: ONLINE</div>
+        <div class="breadcrumb"><img src="/om-logo.png" height="40" style="vertical-align:middle" /></div>
       </header>
       <section class="data-view-panel">
         <div v-if="!hasSearched" class="dashboard-welcome">
           <div class="welcome-terminal">
             <p class="console-line">> Welcome to OM Record!</p>
+            <p class="console-line">> Enter a puzzle name to begin.</p>
           </div>
         </div>
         <OmList v-else :records="currentRecords" />
@@ -228,13 +228,20 @@ const closeSuggestions = () => {
 body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--color-text); font-family: monospace; overflow: hidden; }
 .app-container { display: grid; grid-template-columns: 340px 1fr; height: 100vh; width: 100vw; }
 .sidebar-panel { background-color: var(--bg-panel); border-right: 1px solid var(--border-color); padding: 24px; display: flex; flex-direction: column; gap: 24px; box-shadow: 4px 0 15px rgba(0,0,0,0.3); }
+.sidebar-panel::-webkit-scrollbar { width: 4px; }
+.sidebar-panel::-webkit-scrollbar-track { background: transparent; }
+.sidebar-panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 .brand-zone { display: flex; align-items: center; gap: 12px; } .logo-icon img { display: block; }
-.brand-text h2 { margin: 0; font-size: 1.1rem; color: var(--color-primary); } .brand-text span { font-size: 0.65rem; color: var(--color-text-muted); }
+.brand-text h2 { margin: 0; font-size: 1.1rem; color: var(--color-primary); font-family: 'Cinzel', serif; font-weight: 700; letter-spacing: 1px; }
+.brand-text span { font-size: 0.6rem; color: var(--color-text-muted); font-family: 'Crimson Text', serif; letter-spacing: 0.5px; }
 .divider { border: 0; height: 1px; background: var(--border-color); margin: 0; }
-.section-label { display: block; font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 6px; }
+.section-label { display: block; font-size: 0.7rem; color: var(--color-text-muted); margin-bottom: 6px; font-family: 'Crimson Text', serif; letter-spacing: 0.5px; }
 .search-field-wrapper { display: flex; flex-direction: column; gap: 12px; } .input-container { position: relative; width: 100%; }
 .cyber-input { width: 100%; background-color: var(--bg-input); border: 1px solid var(--border-color); color: #fff; padding: 10px 12px; border-radius: 4px; box-sizing: border-box; font-size: 0.9rem; font-family: monospace; outline: none; }
-.suggestions-menu { position: absolute; top: calc(100% + 4px); left: 0; width: 100%; background-color: #151a26; border: 1px solid var(--color-primary); border-radius: 4px; padding: 0; margin: 0; list-style: none; z-index: 999; max-height: 180px; overflow-y: auto; }
+.suggestions-menu { position: absolute; top: calc(100% + 4px); left: 0; width: 100%; background-color: var(--bg-input); border: 1px solid var(--color-primary); border-radius: 4px; padding: 0; margin: 0; list-style: none; z-index: 999; max-height: 180px; overflow-y: auto; }
+.suggestions-menu::-webkit-scrollbar { width: 4px; }
+.suggestions-menu::-webkit-scrollbar-track { background: transparent; }
+.suggestions-menu::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 .suggestion-item { padding: 10px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; border-bottom: 1px solid #1e2535; }
 .suggestion-item:hover { background-color: var(--bg-input); } .s-name { color: #fff; } .s-id { color: var(--color-accent); font-size: 0.75rem; }
 .btn-execute { background-color: var(--color-primary); color: #000; border: none; padding: 12px; border-radius: 4px; font-weight: bold; cursor: pointer; }
@@ -256,9 +263,12 @@ body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--col
 .timezone-switch button { background: var(--bg-deep); border: 1px solid var(--border-color); color: var(--color-text-muted); padding: 2px 8px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 0.65rem; }
 .timezone-switch button.active { background: var(--color-primary); color: #000; border-color: var(--color-primary); }
 .main-workspace { display: flex; flex-direction: column; height: 100vh; background-color: var(--bg-deep); }
-.workspace-header { background-color: var(--bg-panel); border-bottom: 1px solid var(--border-color); padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
-.breadcrumb { color: var(--color-accent); font-weight: bold; } .timestamp { color: var(--color-text-muted); }
-.data-view-panel { flex: 1; padding: 24px; overflow-y: auto; } .dashboard-welcome { height: 100%; display: flex; align-items: center; justify-content: center; }
+.workspace-header { padding: 18px 24px; display: flex; justify-content: center; align-items: center; border-bottom: 1px solid var(--border-color); }
+.breadcrumb { display: flex; align-items: center; }
+.data-view-panel { flex: 1; padding: 24px; overflow-y: auto; }
+.data-view-panel::-webkit-scrollbar { width: 4px; }
+.data-view-panel::-webkit-scrollbar-track { background: transparent; }
+.data-view-panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; } .dashboard-welcome { height: 100%; display: flex; align-items: center; justify-content: center; }
 .welcome-terminal { background-color: var(--bg-deep); border: 1px solid var(--border-color); padding: 30px; border-radius: 4px; width: 85%; max-width: 600px; }
 .console-line { color: var(--color-accent); margin: 6px 0; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 </style>

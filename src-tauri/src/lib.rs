@@ -944,8 +944,8 @@ const DIM_COUNT: usize = 8;
 fn extract_8d(s: &OmScoreDTO) -> [f64; DIM_COUNT] {
     [
         s.cost as f64, s.cycles as f64, s.area as f64, s.instructions as f64,
-        s.height.unwrap_or(0) as f64, s.width.unwrap_or(0.0),
-        s.bounding_hex.unwrap_or(0) as f64, s.rate.unwrap_or(0.0),
+        s.height.unwrap_or(i32::MAX) as f64, s.width.unwrap_or(f64::MAX),
+        s.bounding_hex.unwrap_or(i32::MAX) as f64, s.rate.unwrap_or(f64::MAX),
     ]
 }
 
@@ -999,15 +999,15 @@ fn analyze_8d_pareto_weakness(
                     let vi = match idx {
                         0 => frontier[i].cost as f64, 1 => frontier[i].cycles as f64,
                         2 => frontier[i].area as f64, 3 => frontier[i].instructions as f64,
-                        4 => frontier[i].height.unwrap_or(0) as f64, 5 => frontier[i].width.unwrap_or(0.0),
-                        6 => frontier[i].bounding_hex.unwrap_or(0) as f64, 7 => frontier[i].rate.unwrap_or(0.0),
+                        4 => frontier[i].height.expect("frontier height null") as f64, 5 => frontier[i].width.expect("frontier width null"),
+                        6 => frontier[i].bounding_hex.expect("frontier bhex null") as f64, 7 => frontier[i].rate.expect("frontier rate null"),
                         _ => 0.0
                     };
                     let vj = match idx {
                         0 => frontier[j].cost as f64, 1 => frontier[j].cycles as f64,
                         2 => frontier[j].area as f64, 3 => frontier[j].instructions as f64,
-                        4 => frontier[j].height.unwrap_or(0) as f64, 5 => frontier[j].width.unwrap_or(0.0),
-                        6 => frontier[j].bounding_hex.unwrap_or(0) as f64, 7 => frontier[j].rate.unwrap_or(0.0),
+                        4 => frontier[j].height.expect("frontier height null") as f64, 5 => frontier[j].width.expect("frontier width null"),
+                        6 => frontier[j].bounding_hex.expect("frontier bhex null") as f64, 7 => frontier[j].rate.expect("frontier rate null"),
                         _ => 0.0
                     };
                     if vi < vj - 1e-9 { dominates = false; break; }
@@ -1241,7 +1241,7 @@ async fn navigate_pareto(
                             mv.insert("cycles".into(), s.cycles as f64);
                             mv.insert("area".into(), s.area as f64);
                             mv.insert("instructions".into(), s.instructions as f64);
-                            mv.insert("height".into(), s.height.unwrap_or(0) as f64);
+                            mv.insert("height".into(), s.height.unwrap_or(0) as f64); // frontend-only, 0 is safe
                             mv.insert("width".into(), s.width.unwrap_or(0.0));
                             mv.insert("boundingHex".into(), s.bounding_hex.unwrap_or(0) as f64);
                             mv.insert("rate".into(), s.rate.unwrap_or(0.0));
@@ -1270,12 +1270,39 @@ async fn navigate_pareto(
     }
 }
 
+#[tauri::command]
+async fn download_to_clipboard(url: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client.get(&url).send().await.map_err(|e| format!("fetch: {}", e))?;
+    let bytes = resp.bytes().await.map_err(|e| format!("read: {}", e))?;
+    use base64::{Engine as _, engine::general_purpose};
+    Ok(general_purpose::STANDARD.encode(&bytes))
+}
+
+#[tauri::command]
+async fn save_file_as(url: String, suffix: Option<String>, app: tauri::AppHandle) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let resp = client.get(&url).send().await.map_err(|e| format!("fetch: {}", e))?;
+    let bytes = resp.bytes().await.map_err(|e| format!("read: {}", e))?;
+    let fname = url.split('/').last().unwrap_or("download").to_string();
+    let fname = if let Some(suf) = suffix { format!("{}{}", fname, suf) } else { fname };
+    use tauri_plugin_dialog::DialogExt;
+    let path = app.dialog().file()
+        .set_file_name(&fname)
+        .blocking_save_file();
+    if let Some(p) = path {
+        std::fs::write(p.as_path().unwrap(), &bytes).map_err(|e| format!("write: {}", e))?;
+    }
+    Ok(())
+}
+
 // ================= 6. App 启动阶段 =================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(MemoryState {
                 record_vault: Mutex::new(Vec::new()),
@@ -1391,7 +1418,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![search_om_records, sync_incremental, judge_draft, save_puzzle_best, load_puzzle_best, get_live_puzzle_suggestions, check_boot_ready, get_cache_path, get_cache_info, get_record_radar_chart, navigate_pareto])
+        .invoke_handler(tauri::generate_handler![search_om_records, sync_incremental, judge_draft, save_puzzle_best, load_puzzle_best, get_live_puzzle_suggestions, check_boot_ready, get_cache_path, get_cache_info, get_record_radar_chart, navigate_pareto, download_to_clipboard, save_file_as])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
