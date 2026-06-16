@@ -1,0 +1,7 @@
+node_modules/
+target/
+KvnchRebuild/
+jre-minimal/
+installer/
+*.log
+.DS_Store

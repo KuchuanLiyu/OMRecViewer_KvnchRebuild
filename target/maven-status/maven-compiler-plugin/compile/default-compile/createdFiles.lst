@@ -1,0 +1,14 @@
+com\kvnch\omviewer\controller\DiagnosticsController.class
+com\kvnch\omviewer\model\OmPuzzleDTO.class
+com\kvnch\omviewer\OmViewerApplication.class
+com\kvnch\omviewer\controller\SearchController.class
+com\kvnch\omviewer\service\CacheFileService.class
+com\kvnch\omviewer\model\OmGroupDTO.class
+com\kvnch\omviewer\config\WebMvcConfig.class
+com\kvnch\omviewer\model\OmRecordDTO.class
+com\kvnch\omviewer\model\OmScoreDTO.class
+com\kvnch\omviewer\service\PuzzleService.class
+com\kvnch\omviewer\config\RestTemplateConfig.class
+com\kvnch\omviewer\service\ZlbbApiClient.class
+com\kvnch\omviewer\service\BootSequenceService.class
+com\kvnch\omviewer\model\UniversalSuggestion.class
