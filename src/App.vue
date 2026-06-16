@@ -150,15 +150,15 @@ const closeSuggestions = () => {
   <div class="app-container">
     <aside class="sidebar-panel">
       <div class="brand-zone">
-        <div class="logo-icon">▲</div>
+        <div class="logo-icon"><img src="/icon.png" width="30" height="30" /></div>
         <div class="brand-text">
           <h2>OPUS MAGNUM</h2>
-          <span>LEADERBOARD TERMINAL v2.5</span>
+          <span>LEADERBOARD TERMINAL</span>
         </div>
       </div>
       <hr class="divider" />
       <div class="control-group">
-        <label class="section-label">QUERY INSTANCE (MOCK/LIVE FLUX)</label>
+        <label class="section-label">SEARCH PUZZLE</label>
         <div class="search-field-wrapper">
           <div class="input-container">
             <input 
@@ -180,11 +180,11 @@ const closeSuggestions = () => {
           </div>
           <button @click="handleEnterKey" :disabled="loading || !searchKeyword.trim()" class="btn-execute">EXECUTE</button>
           <button @click="forceRefresh = !forceRefresh; if (forceRefresh) executeRefresh()" class="btn-execute" style="margin-top:6px" :class="{ active: forceRefresh }">REFRESH</button>
-          <button @click="syncNow" :disabled="syncing" class="btn-execute btn-sync" style="margin-top:6px">{{ syncing ? 'SYNCING…' : 'SYNC' }}</button>
+          <button @click="syncNow" :disabled="syncing" class="btn-execute" style="margin-top:6px">{{ syncing ? 'SYNCING…' : 'SYNC' }}</button>
         </div>
       </div>
       <div class="status-zone">
-        <label class="section-label">DIAGNOSTICS</label>
+        <label class="section-label">STATUS</label>
         <div class="status-card" :class="{ 'is-loading': loading, 'is-error': errorMessage, 'is-syncing': !bootReady }">
           <div :class="['pulse-light', loading ? 'warning' : !bootReady ? 'syncing' : errorMessage ? 'danger' : 'success']"></div>
           <span class="status-text">{{ !bootReady ? "SYNCING" : loading ? "FETCHING" : errorMessage ? "MISMATCH" : "READY" }}</span>
@@ -208,14 +208,13 @@ const closeSuggestions = () => {
     </aside>
     <main class="main-workspace">
       <header class="workspace-header">
-        <div class="breadcrumb">CLUSTER / DATA_FLOW / RECORD_GRID</div>
+        <div class="breadcrumb">OM RECORD</div>
         <div class="timestamp">SYS_STATUS: ONLINE</div>
       </header>
       <section class="data-view-panel">
         <div v-if="!hasSearched" class="dashboard-welcome">
           <div class="welcome-terminal">
-            <p class="console-line">> MULTI-GAME DATA ENGINE ACTIVE.</p>
-            <p class="console-line">> INPUT FRAGMENT KEYWORD TO POLL INDEX MATRIX...</p>
+            <p class="console-line">> Welcome to OM Record!</p>
           </div>
         </div>
         <OmList v-else :records="currentRecords" />
@@ -225,11 +224,11 @@ const closeSuggestions = () => {
 </template>
 
 <style>
-:root { --bg-deep: #0a0d14; --bg-panel: #121620; --bg-input: #1a1f2c; --border-color: #262e3f; --color-primary: #00b4d8; --color-accent: #00f5d4; --color-warn: #ffb703; --color-danger: #ff4a4a; --color-text: #e2e8f0; --color-text-muted: #4e5d78; }
+:root { --bg-deep: #1a1a1a; --bg-panel: #242424; --bg-input: #2d2d2d; --border-color: #3d3d3d; --color-primary: #b0b0b0; --color-accent: #e0c070; --color-warn: #d4a040; --color-danger: #c06060; --color-text: #d4d4d4; --color-text-muted: #6a6a6a; }
 body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--color-text); font-family: monospace; overflow: hidden; }
 .app-container { display: grid; grid-template-columns: 340px 1fr; height: 100vh; width: 100vw; }
 .sidebar-panel { background-color: var(--bg-panel); border-right: 1px solid var(--border-color); padding: 24px; display: flex; flex-direction: column; gap: 24px; box-shadow: 4px 0 15px rgba(0,0,0,0.3); }
-.brand-zone { display: flex; align-items: center; gap: 12px; } .logo-icon { font-size: 26px; color: var(--color-accent); }
+.brand-zone { display: flex; align-items: center; gap: 12px; } .logo-icon img { display: block; }
 .brand-text h2 { margin: 0; font-size: 1.1rem; color: var(--color-primary); } .brand-text span { font-size: 0.65rem; color: var(--color-text-muted); }
 .divider { border: 0; height: 1px; background: var(--border-color); margin: 0; }
 .section-label { display: block; font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 6px; }
@@ -240,10 +239,8 @@ body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--col
 .suggestion-item:hover { background-color: var(--bg-input); } .s-name { color: #fff; } .s-id { color: var(--color-accent); font-size: 0.75rem; }
 .btn-execute { background-color: var(--color-primary); color: #000; border: none; padding: 12px; border-radius: 4px; font-weight: bold; cursor: pointer; }
 .btn-execute:hover { background-color: var(--color-accent); }
-.btn-execute.active { background-color: #ffb703; color: #000; }
+.btn-execute.active { background-color: var(--color-warn); color: #000; }
 .btn-execute:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-sync { background-color: #7c3aed; color: #fff; }
-.btn-sync:hover { background-color: #a78bfa; }
 
 .status-card { background-color: var(--bg-input); border: 1px solid var(--border-color); padding: 12px; border-radius: 4px; display: flex; align-items: center; gap: 12px; }
 .pulse-light { width: 8px; height: 8px; border-radius: 50%; } .pulse-light.success { background-color: var(--color-accent); } .pulse-light.warning { background-color: var(--color-warn); animation: pulse 1s infinite; } .pulse-light.danger { background-color: var(--color-danger); } .pulse-light.syncing { background-color: var(--color-primary); animation: pulse 0.6s infinite; }
@@ -252,16 +249,16 @@ body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--col
 .sync-summary { color: var(--color-accent); font-size: 0.78rem; margin: 0; }
 .sync-errors { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0 0; }
 .sync-errors span { color: var(--color-warn); font-size: 0.68rem; }
-.cache-path { color: #4e5d78; font-size: 0.65rem; margin: 8px 0 0 0; word-break: break-all; }
-.cache-ts { color: #00f5d4; font-size: 0.75rem; font-weight: bold; margin: 8px 0 0 0; font-family: monospace; }
+.cache-path { color: var(--color-text-muted); font-size: 0.65rem; margin: 8px 0 0 0; word-break: break-all; }
+.cache-ts { color: var(--color-accent); font-size: 0.75rem; font-weight: bold; margin: 8px 0 0 0; font-family: monospace; }
 .timezone-switch { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
-.tz-label { color: #4e5d78; font-size: 0.65rem; margin-right: 4px; }
-.timezone-switch button { background: #0a0d14; border: 1px solid #262e3f; color: #4e5d78; padding: 2px 8px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 0.65rem; }
-.timezone-switch button.active { background: #00b4d8; color: #000; border-color: #00b4d8; }
+.tz-label { color: var(--color-text-muted); font-size: 0.65rem; margin-right: 4px; }
+.timezone-switch button { background: var(--bg-deep); border: 1px solid var(--border-color); color: var(--color-text-muted); padding: 2px 8px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 0.65rem; }
+.timezone-switch button.active { background: var(--color-primary); color: #000; border-color: var(--color-primary); }
 .main-workspace { display: flex; flex-direction: column; height: 100vh; background-color: var(--bg-deep); }
 .workspace-header { background-color: var(--bg-panel); border-bottom: 1px solid var(--border-color); padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
 .breadcrumb { color: var(--color-accent); font-weight: bold; } .timestamp { color: var(--color-text-muted); }
 .data-view-panel { flex: 1; padding: 24px; overflow-y: auto; } .dashboard-welcome { height: 100%; display: flex; align-items: center; justify-content: center; }
-.welcome-terminal { background-color: #07090f; border: 1px solid var(--border-color); padding: 30px; border-radius: 4px; width: 85%; max-width: 600px; }
-.console-line { color: #4af626; margin: 6px 0; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.welcome-terminal { background-color: var(--bg-deep); border: 1px solid var(--border-color); padding: 30px; border-radius: 4px; width: 85%; max-width: 600px; }
+.console-line { color: var(--color-accent); margin: 6px 0; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 </style>

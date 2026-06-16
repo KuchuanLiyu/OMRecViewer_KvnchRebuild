@@ -2585,6 +2585,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "good_lp",
+ "png 0.17.16",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

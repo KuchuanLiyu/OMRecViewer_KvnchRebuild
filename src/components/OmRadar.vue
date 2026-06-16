@@ -21,7 +21,7 @@ const props = defineProps<{
 const svgRef = ref<SVGElement | null>(null);
 const isCopying = ref(false);
 
-const SCHEMES = ["cyan", "amber", "purple", "emerald"] as const;
+const SCHEMES = ["cyan", "amber", "purple", "emerald", "crimson", "ocean"] as const;
 const schemeIndex = ref(0);
 const colorScheme = computed(() => SCHEMES[schemeIndex.value]);
 

@@ -793,11 +793,18 @@ async fn get_live_puzzle_suggestions(
     if fragment.is_empty() { return Ok(vec![]); }
 
     let list = state.puzzle_list.lock().unwrap();
-    let matches: Vec<UniversalSuggestion> = list
+    let mut matches: Vec<UniversalSuggestion> = list
         .iter()
         .filter(|p| p.id.to_lowercase().contains(&fragment) || p.display_name.to_lowercase().contains(&fragment))
         .cloned()
         .collect();
+
+    // 前缀匹配优先
+    matches.sort_by(|a, b| {
+        let a_pref = a.display_name.to_lowercase().starts_with(&fragment);
+        let b_pref = b.display_name.to_lowercase().starts_with(&fragment);
+        b_pref.cmp(&a_pref) // true 排在前面
+    });
 
     Ok(matches)
 }
@@ -1105,9 +1112,20 @@ fn analyze_8d_pareto_weakness(
             if max_alpha > 1e-7 {
                 let weights: Vec<f64> = (0..n).map(|i| solution.value(lambdas[i])).collect();
 
+                println!("[NAV_LP] alpha={:.6} frontier={} draft_T={} draft_O={}",
+                    max_alpha, n, draft.trackless, draft.overlap);
+
                 let mut full_weights = vec![0.0; candidates.len()];
                 for (fi, &ci) in frontier_to_ci.iter().enumerate() {
                     if fi < weights.len() { full_weights[ci] = weights[fi]; }
+                }
+                for (ci, &w) in full_weights.iter().enumerate() {
+                    if w > 1e-6 {
+                        let s = candidates[ci].score.as_ref().unwrap();
+                        println!("  λ[{}]={:.4} O={} T={} ({},{},{},{})",
+                            ci, w, s.overlap, s.trackless,
+                            s.cost, s.cycles, s.area, s.instructions);
+                    }
                 }
 
                 // P_target: λ 的几何加权组合
@@ -1121,7 +1139,25 @@ fn analyze_8d_pareto_weakness(
                     log_sum.exp()
                 }).collect();
                 Some((max_alpha, full_weights, p_target, frontier.len(), candidates.len()))
-            } else { None }
+            } else {
+                // non-weak 也计算几何组合
+                // alpha ≤ 1e-7：LP 找到的最好凸组合也无法压过 draft
+                let weights: Vec<f64> = (0..n).map(|i| solution.value(lambdas[i])).collect();
+                let mut full_weights = vec![0.0; candidates.len()];
+                for (fi, &ci) in frontier_to_ci.iter().enumerate() {
+                    if fi < weights.len() { full_weights[ci] = weights[fi]; }
+                }
+                let p_target: Vec<f64> = (0..DIM_COUNT).map(|j| {
+                    let mut log_sum = 0.0;
+                    for i in 0..n {
+                        if weights[i] > 1e-5 {
+                            log_sum += weights[i] * (extract_8d(frontier[i])[j].max(1.0).ln());
+                        }
+                    }
+                    log_sum.exp()
+                }).collect();
+                Some((max_alpha, full_weights, p_target, frontier.len(), candidates.len()))
+            }
         }
         Err(_) => None,
     }
@@ -1155,21 +1191,30 @@ async fn navigate_pareto(
 ) -> Result<NavigatorResult, String> {
     let candidates: Vec<OmRecordDTO> = {
         let vault = state.record_vault.lock().unwrap();
+        println!("[NAV_FILTER] draft O={} T={} G={} C={} A={}",
+            draft.overlap, draft.trackless,
+            draft.cost.unwrap_or(-1), draft.cycles.unwrap_or(-1), draft.area.unwrap_or(-1));
         vault.iter().filter(|r| {
             r.puzzle.as_ref().map_or(false, |p| p.id == puzzle_id)
             && r.score.is_some()
             && {
                 let s = r.score.as_ref().unwrap();
-                // 排除草稿自身
                 let is_self = s.cost == draft.cost.unwrap_or(-1)
                     && s.cycles == draft.cycles.unwrap_or(-1)
                     && s.area == draft.area.unwrap_or(-1)
                     && s.instructions == draft.instructions.unwrap_or(-1)
                     && s.overlap == draft.overlap
                     && s.trackless == draft.trackless;
-                !is_self
-                && s.overlap == draft.overlap && (!draft.trackless || s.trackless)
-                && s.cost > 0 && s.cycles > 0 && s.area > 0 && s.instructions > 0
+                let pass = !is_self
+                    && s.overlap == draft.overlap && (!draft.trackless || s.trackless)
+                    && s.cost > 0 && s.cycles > 0 && s.area > 0 && s.instructions > 0;
+                if !pass && !is_self && s.cost > 0 {
+                    println!("  REJECT G={} C={} O={} T={} | ovMatch={} tlPass={}",
+                        s.cost, s.cycles, s.overlap, s.trackless,
+                        s.overlap == draft.overlap,
+                        !draft.trackless || s.trackless);
+                }
+                pass
             }
         }).cloned().collect()
     };
@@ -1180,29 +1225,30 @@ async fn navigate_pareto(
 
     match analyze_8d_pareto_weakness(&draft, &candidates) {
         Some((gap, lambdas, p_target, frontier_sz, _pool_sz)) => {
+            let is_weak = gap > 1e-7;
             let allies: Vec<LambdaAlly> = lambdas.iter().enumerate()
-                .filter(|(_, &w)| w > 1e-6)
-                .map(|(i, &w)| {
-                    let rec = &candidates[i];
-                    let sid = rec.id.clone().unwrap_or_default();
-                    let author = rec.author.clone().unwrap_or_default();
-                    let label = rec.full_formatted_score.clone().unwrap_or_else(|| {
-                        rec.score.as_ref().map(|s| format!("{}g/{}c/{}a", s.cost, s.cycles, s.area)).unwrap_or_default()
-                    });
-                    let mut mv = std::collections::HashMap::new();
-                    if let Some(s) = &rec.score {
-                        mv.insert("cost".into(), s.cost as f64);
-                        mv.insert("cycles".into(), s.cycles as f64);
-                        mv.insert("area".into(), s.area as f64);
-                        mv.insert("instructions".into(), s.instructions as f64);
-                        mv.insert("height".into(), s.height.unwrap_or(0) as f64);
-                        mv.insert("width".into(), s.width.unwrap_or(0.0));
-                        mv.insert("boundingHex".into(), s.bounding_hex.unwrap_or(0) as f64);
-                        mv.insert("rate".into(), s.rate.unwrap_or(0.0));
-                    }
-                    LambdaAlly { record_id: sid, author, score_label: label, weight: w, metric_values: mv }
-                })
-                .collect();
+                    .filter(|(_, &w)| w > 1e-6)
+                    .map(|(i, &w)| {
+                        let rec = &candidates[i];
+                        let sid = rec.id.clone().unwrap_or_default();
+                        let author = rec.author.clone().unwrap_or_default();
+                        let label = rec.full_formatted_score.clone().unwrap_or_else(|| {
+                            rec.score.as_ref().map(|s| format!("{}g/{}c/{}a", s.cost, s.cycles, s.area)).unwrap_or_default()
+                        });
+                        let mut mv = std::collections::HashMap::new();
+                        if let Some(s) = &rec.score {
+                            mv.insert("cost".into(), s.cost as f64);
+                            mv.insert("cycles".into(), s.cycles as f64);
+                            mv.insert("area".into(), s.area as f64);
+                            mv.insert("instructions".into(), s.instructions as f64);
+                            mv.insert("height".into(), s.height.unwrap_or(0) as f64);
+                            mv.insert("width".into(), s.width.unwrap_or(0.0));
+                            mv.insert("boundingHex".into(), s.bounding_hex.unwrap_or(0) as f64);
+                            mv.insert("rate".into(), s.rate.unwrap_or(0.0));
+                        }
+                        LambdaAlly { record_id: sid, author, score_label: label, weight: w, metric_values: mv }
+                    })
+                    .collect();
 
             let draft_raw = [
                 draft.cost.unwrap_or(0) as f64, draft.cycles.unwrap_or(0) as f64,
@@ -1218,7 +1264,7 @@ async fn navigate_pareto(
                 delta_metrics.insert(k.to_string(), delta);
             }
 
-            Ok(NavigatorResult { is_weak: true, weakness_gap: gap, convex_hull_size: frontier_sz, lambda_allies: allies, delta_metrics })
+            Ok(NavigatorResult { is_weak, weakness_gap: gap, convex_hull_size: frontier_sz, lambda_allies: allies, delta_metrics })
         },
         None => Ok(NavigatorResult { is_weak: false, weakness_gap: 0.0, convex_hull_size: 0, lambda_allies: vec![], delta_metrics: std::collections::HashMap::new() }),
     }
@@ -1237,6 +1283,20 @@ pub fn run() {
                 flight_lock: Mutex::new(None),
                 boot_ready: std::sync::atomic::AtomicBool::new(false),
             });
+
+            // 设置窗口图标 (dev + 打包都生效)
+            if let Some(win) = app.get_webview_window("main") {
+                let icon_data = include_bytes!("../icons/icon.png");
+                let decoder = png::Decoder::new(&icon_data[..]);
+                if let Ok(mut reader) = decoder.read_info() {
+                    let mut buf = vec![0; reader.output_buffer_size()];
+                    if reader.next_frame(&mut buf).is_ok() {
+                        let info = reader.info();
+                        let img = tauri::image::Image::new_owned(buf, info.width, info.height);
+                        let _ = win.set_icon(img);
+                    }
+                }
+            }
 
             let handle = app.handle().clone();
             let cache_dir = app.path().app_cache_dir().unwrap_or_else(|_| PathBuf::from("."));
