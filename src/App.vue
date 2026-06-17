@@ -27,6 +27,8 @@ const lastSyncResult = ref<SyncResult | null>(null);
 const syncError = ref<string | null>(null);
 const timezoneMode = ref<"UTC" | "BEIJING">("UTC");
 
+const sidebarCollapsed = ref(false);
+
 const formattedCacheInfo = computed(() => {
   if (!cacheInfo.value) return "Last Sync: —";
   // 匹配 ISO (带T带Z) 或已格式化 (空格分隔) 的时间戳
@@ -148,7 +150,13 @@ const closeSuggestions = () => {
 
 <template>
   <div class="app-container">
-    <aside class="sidebar-panel">
+    <aside class="sidebar-panel" :class="{ collapsed: sidebarCollapsed }">
+      <button class="sidebar-toggle" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'">
+        <svg width="10" height="14" viewBox="0 0 10 14" class="toggle-arrow">
+          <path v-if="sidebarCollapsed" d="M2 1 L8 7 L2 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path v-else d="M8 1 L2 7 L8 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <div class="brand-zone">
         <div class="logo-icon"><img src="/icon.png" width="30" height="30" /></div>
         <div class="brand-text">
@@ -226,8 +234,17 @@ const closeSuggestions = () => {
 <style>
 :root { --bg-deep: #1a1a1a; --bg-panel: #242424; --bg-input: #2d2d2d; --border-color: #3d3d3d; --color-primary: #b0b0b0; --color-accent: #e0c070; --color-warn: #d4a040; --color-danger: #c06060; --color-text: #d4d4d4; --color-text-muted: #6a6a6a; }
 body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--color-text); font-family: monospace; overflow: hidden; }
-.app-container { display: grid; grid-template-columns: 340px 1fr; height: 100vh; width: 100vw; }
-.sidebar-panel { background-color: var(--bg-panel); border-right: 1px solid var(--border-color); padding: 24px; display: flex; flex-direction: column; gap: 24px; box-shadow: 4px 0 15px rgba(0,0,0,0.3); }
+.app-container { display: grid; grid-template-columns: minmax(220px, 22%) 1fr; height: 100vh; width: 100vw; transition: grid-template-columns 0.25s ease; }
+.app-container:has(.sidebar-panel.collapsed) { grid-template-columns: 30px 1fr; }
+.sidebar-panel { background-color: var(--bg-panel); border-right: 1px solid var(--border-color); padding: 24px; display: flex; flex-direction: column; gap: 24px; box-shadow: 4px 0 15px rgba(0,0,0,0.3); overflow-y: auto; overflow-x: hidden; position: relative; transition: padding 0.25s ease, border 0.25s ease; }
+.sidebar-panel.collapsed { padding: 0; border-right: none; min-width: 0; overflow: hidden; }
+.sidebar-panel.collapsed > *:not(.sidebar-toggle) { opacity: 0; visibility: hidden; transition: opacity 0.15s ease, visibility 0.15s ease; }
+.sidebar-toggle { position: absolute; top: 50%; right: 0; transform: translateY(-50%); z-index: 10; width: 18px; height: 56px; background: var(--bg-panel); border: 1px solid var(--border-color); border-right: none; border-radius: 4px 0 0 4px; color: var(--color-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: background 0.2s, border-color 0.2s, color 0.2s; }
+.sidebar-toggle:hover { background: var(--bg-input); border-color: var(--color-primary); color: var(--color-accent); }
+.sidebar-toggle:active { background: var(--bg-deep); }
+.toggle-arrow { transition: transform 0.2s; }
+.sidebar-toggle:hover .toggle-arrow { transform: scale(1.15); }
+.sidebar-panel.collapsed .sidebar-toggle { right: 0; border-radius: 0 4px 4px 0; border-right: 1px solid var(--border-color); border-left: none; }
 .sidebar-panel::-webkit-scrollbar { width: 4px; }
 .sidebar-panel::-webkit-scrollbar-track { background: transparent; }
 .sidebar-panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
@@ -262,10 +279,10 @@ body { margin: 0; padding: 0; background-color: var(--bg-deep); color: var(--col
 .tz-label { color: var(--color-text-muted); font-size: 0.65rem; margin-right: 4px; }
 .timezone-switch button { background: var(--bg-deep); border: 1px solid var(--border-color); color: var(--color-text-muted); padding: 2px 8px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 0.65rem; }
 .timezone-switch button.active { background: var(--color-primary); color: #000; border-color: var(--color-primary); }
-.main-workspace { display: flex; flex-direction: column; height: 100vh; background-color: var(--bg-deep); }
+.main-workspace { display: flex; flex-direction: column; height: 100vh; background-color: var(--bg-deep); min-width: 0; }
 .workspace-header { padding: 18px 24px; display: flex; justify-content: center; align-items: center; border-bottom: 1px solid var(--border-color); }
 .breadcrumb { display: flex; align-items: center; }
-.data-view-panel { flex: 1; padding: 24px; overflow-y: auto; }
+.data-view-panel { flex: 1; padding: 24px; overflow-y: auto; min-width: 0; }
 .data-view-panel::-webkit-scrollbar { width: 4px; }
 .data-view-panel::-webkit-scrollbar-track { background: transparent; }
 .data-view-panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; } .dashboard-welcome { height: 100%; display: flex; align-items: center; justify-content: center; }

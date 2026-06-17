@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from "vue";
+import { ref, computed } from "vue";
 import { OmRecordDTO } from "../types/om";
-import type { RadarChartData } from "../types/om";
 import DraftJudgePanel from "./DraftJudgePanel.vue";
 import NavigatorPanel from "./NavigatorPanel.vue";
-import OmRadar from "./OmRadar.vue";
-import { invoke } from "@tauri-apps/api/core";
+import RecordDetail from "./RecordDetail.vue";
 
 const props = defineProps<{
   records: OmRecordDTO[];
@@ -250,118 +248,6 @@ const primarySortShort = computed(() => {
 });
 
 const selectedRecord = ref<OmRecordDTO | null>(null);
-const recordRadarChart = ref<RadarChartData | null>(null);
-const radarLoading = ref(false);
-const gifError = ref(false);
-const gifLoading = ref(false);
-const isVideo = computed(() => /\.(mp4|webm|mov)($|\?)/i.test(selectedRecord.value?.gif || ""));
-const gifRevealed = ref(false);
-const gifCopying = ref(false);
-const solSaving = ref(false);
-
-async function saveSolution() {
-  if (!selectedRecord.value?.solution || solSaving.value) return;
-  solSaving.value = true;
-  try {
-    await invoke("save_file_as", { url: selectedRecord.value.solution, suffix: ".solution" });
-  } catch (e) { console.error(e); }
-  solSaving.value = false;
-}
-
-async function copyGifToClipboard() {
-  if (!selectedRecord.value?.gif || gifCopying.value) return;
-  const url = selectedRecord.value.gif;
-  const isVid = /\.(mp4|webm|mov)($|\?)/i.test(url);
-  if (isVid) {
-    await invoke("save_file_as", { url });
-    return;
-  }
-  gifCopying.value = true;
-  try {
-    const b64: string = await invoke("download_to_clipboard", { url });
-    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes]) })]);
-  } catch (e) { console.error(e); }
-  gifCopying.value = false;
-}
-
-watch(selectedRecord, () => { gifError.value = false; gifLoading.value = false; gifRevealed.value = false; });
-const RADAR_HIDDEN_KEY = "om_radar_hidden_metrics";
-const radarHiddenMetrics = ref<Set<string>>(new Set(
-  JSON.parse(localStorage.getItem(RADAR_HIDDEN_KEY) || "[]")
-));
-
-function toggleRadarMetric(k: string) {
-  const next = new Set(radarHiddenMetrics.value);
-  if (next.has(k)) next.delete(k); else next.add(k);
-  radarHiddenMetrics.value = next;
-  localStorage.setItem(RADAR_HIDDEN_KEY, JSON.stringify([...next]));
-}
-
-// 过滤后的雷达图数据
-const filteredRadarChart = computed(() => {
-  const src = recordRadarChart.value;
-  if (!src) return null;
-  const axes: Record<string, any> = {};
-  const draftRaw: Record<string, number> = {};
-  for (const k of Object.keys(src.axes)) {
-    if (!radarHiddenMetrics.value.has(k)) {
-      axes[k] = src.axes[k];
-      if (src.draftRaw[k] !== undefined) draftRaw[k] = src.draftRaw[k];
-    }
-  }
-  return { mode: src.mode, axes, draftRaw } as RadarChartData;
-});
-
-const onKeydown = (e: KeyboardEvent) => { if (e.key === "Escape") selectedRecord.value = null; };
-watch(selectedRecord, (v) => {
-  if (v) document.addEventListener("keydown", onKeydown);
-  else document.removeEventListener("keydown", onKeydown);
-});
-// 🚀 详情弹窗雷达图按需加载
-watch(selectedRecord, async (record) => {
-  recordRadarChart.value = null;
-  if (!record || !record.score) return;
-  radarLoading.value = true;
-  try {
-    const hasInst = (record.score.instructions ?? 0) > 0;
-    const mode = hasInst ? "GCAI" : "GCA";
-    recordRadarChart.value = await invoke<RadarChartData>("get_record_radar_chart", {
-      recordScore: record.score,
-      puzzleId: record.puzzle?.id || "",
-      mode,
-    });
-  } catch (err) {
-    console.error("Failed to load record radar:", err);
-  } finally {
-    radarLoading.value = false;
-  }
-});
-onUnmounted(() => document.removeEventListener("keydown", onKeydown));
-
-const formatDate = (raw: string | null) => {
-  if (!raw) return "—";
-  try {
-    const d = new Date(raw);
-    return d.toLocaleString("zh-CN", { hour12: false });
-  } catch {
-    return raw;
-  }
-};
-
-// @ts-ignore
-const _copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-  }
-};
 
 const handleHeaderClick = (expr: string) => {
   if (sortExpr.value === expr) {
@@ -442,67 +328,17 @@ const handleHeaderClick = (expr: string) => {
         <NavigatorPanel :puzzle-id="puzzleInfo?.id || ''" :records="records" :filterTrackless="filterTrackless" :filterOverlap="showOverlapOnly" :puzzle-name="puzzleInfo?.name || ''" />
       </div>
       <!-- 详情面板（替代表格） -->
-      <div v-if="selectedRecord" class="detail-panel">
-        <div class="detail-panel-hdr">
-          <span class="detail-title">RECORD DETAIL</span>
-          <div class="detail-hdr-right">
-            <button class="detail-close" @click="selectedRecord = null">×</button>
-          </div>
-        </div>
-        <div class="detail-layout">
-          <div class="detail-info">
-            <div class="detail-meta-box">
-              <span class="detail-label">AUTHOR</span>
-              <span class="detail-value">{{ selectedRecord.author || "—" }}</span>
-              <span class="detail-label" style="margin-left:20px">UPDATED</span>
-              <span class="detail-value">{{ formatDate(selectedRecord.lastModified) }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">SOLUTION</span>
-              <button class="copy-btn" @click="saveSolution" :disabled="!selectedRecord.solution || solSaving">{{ solSaving ? 'SAVING…' : 'DOWNLOAD' }}</button>
-            </div>
-            <div v-if="recordRadarChart" class="radar-metric-toggles">
-              <label v-for="k in ['cost','cycles','area','instructions','height','width','boundingHex','rate'].filter(k => recordRadarChart!.axes[k])" :key="k"
-                class="radar-chip" :class="{ off: radarHiddenMetrics.has(k) }"
-                @click="toggleRadarMetric(k)">
-                {{ k }}
-              </label>
-            </div>
-            <div class="detail-radar-bottom">
-              <div v-if="radarLoading" class="radar-skeleton">LOADING...</div>
-              <OmRadar v-else-if="filteredRadarChart" :chartData="filteredRadarChart" :puzzleName="selectedRecord.puzzle?.displayName || ''" />
-              <div v-else class="radar-skeleton">UNAVAILABLE</div>
-            </div>
-          </div>
-          <div class="detail-right">
-            <div class="detail-row" style="padding: 0;">
-              <span class="detail-label">GIF</span>
-              <button class="copy-btn" @click="copyGifToClipboard" :disabled="!selectedRecord.gif || gifCopying">{{ gifCopying ? '...' : 'DOWNLOAD' }}</button>
-            </div>
-            <div class="gif-preview-box">
-              <template v-if="selectedRecord.gif && gifRevealed && !gifError">
-                <video v-if="isVideo" :src="selectedRecord.gif" class="gif-preview-img" autoplay loop muted playsinline
-                  @loadeddata="gifLoading = false" @error="gifError = true" />
-                <img v-else :src="selectedRecord.gif" class="gif-preview-img"
-                  @load="gifLoading = false" @error="gifError = true" />
-                <div v-if="gifLoading" class="gif-preview-placeholder">LOADING...</div>
-              </template>
-              <div v-else-if="selectedRecord.gif && !gifRevealed" class="gif-preview-placeholder clickable" @click="gifRevealed = true; gifLoading = true">VIEW SPOILER</div>
-              <div v-else class="gif-preview-placeholder">NO PREVIEW</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <RecordDetail v-if="selectedRecord" :record="selectedRecord" @close="selectedRecord = null" />
       <!-- 记录表格视图 -->
       <table v-show="!selectedRecord && viewMode !== 'judge' && viewMode !== 'navigator'" class="matrix-table">
         <thead>
           <tr>
-            <th style="width: 18%">CATEGORY</th>
-            <th style="width: 40%">SCORE (@V / @∞)</th>
-            <th @click="handleHeaderClick('S')" class="sortable">Sum</th>
-            <th @click="handleHeaderClick('S4')" class="sortable">Sum4</th>
-            <th style="width: 16%">Derived</th>
-            <th style="width: 4%"></th>
+            <th>CATEGORY</th>
+            <th>SCORE (@V / @∞)</th>
+            <th @click="handleHeaderClick('S')" class="sortable num-hdr">Sum</th>
+            <th @click="handleHeaderClick('S4')" class="sortable num-hdr">Sum4</th>
+            <th class="num-hdr">Derived</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -562,19 +398,17 @@ const handleHeaderClick = (expr: string) => {
 .sort-input { background-color: var(--bg-deep); color: var(--color-text); border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.75rem; outline: none; width: 80px; }
 .sort-input:focus { border-color: var(--color-primary); }
 .sort-selector select { background-color: var(--bg-deep); color: var(--color-text); border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.75rem; outline: none; }
-.matrix-container { background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; display: flex; flex-direction: column; }
-.matrix-container::-webkit-scrollbar { width: 4px; }
-.matrix-container::-webkit-scrollbar-track { background: transparent; }
-.matrix-container::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+.matrix-container { background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; min-width: 0; }
 .matrix-table { width: 100%; border-collapse: collapse; font-family: Consolas, Monaco, monospace; font-size: 0.88rem; text-align: left; }
-th, td { padding: 10px 12px; border-bottom: 1px solid var(--bg-input); }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--bg-input); overflow-wrap: break-word; }
 th { background-color: var(--bg-panel); color: var(--color-text-muted); font-size: 0.72rem; font-weight: normal; border-bottom: 2px solid var(--border-color); font-family: 'Crimson Text', serif; letter-spacing: 0.5px; }
 .sortable { cursor: pointer; user-select: none; } .sortable:hover { background-color: var(--bg-input); color: #fff; } .sortable.active { color: var(--color-warn); font-weight: bold; }
+.num-hdr { text-align: right; }
 .matrix-row:hover { background-color: var(--bg-input); } .category-cell { color: var(--color-accent); font-weight: bold; font-size: 0.82rem; }
-.score-string { color: var(--color-text); letter-spacing: 0.3px; font-size: 0.82rem; line-height: 1.4; display: flex; flex-direction: column; gap: 2px; }
-.score-line { word-break: break-all; }
+.score-string { color: var(--color-text); letter-spacing: 0.3px; font-size: 0.82rem; line-height: 1.4; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.score-line { word-break: break-all; overflow-wrap: anywhere; }
 .score-inf { color: var(--color-primary); }
-.score-full { word-break: break-all; }
+.score-full { word-break: break-all; overflow-wrap: anywhere; }
 .score-full span { color: var(--color-text); font-weight: normal; }
 :deep(.sort-primary) { color: var(--color-warn); font-weight: bold; text-decoration: underline; }
 .score-string span { font-weight: bold; }
@@ -619,42 +453,4 @@ th { background-color: var(--bg-panel); color: var(--color-text-muted); font-siz
 .detail-cell { text-align: center; }
 .detail-btn { background: none; border: 1px solid var(--border-color); color: var(--color-text-muted); font-size: 0.9rem; cursor: pointer; padding: 0 6px; border-radius: 3px; font-family: monospace; line-height: 1; }
 .detail-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
-
-/* ── 详情弹窗 ── */
-.detail-panel { padding: 20px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.detail-panel::-webkit-scrollbar { width: 4px; }
-.detail-panel::-webkit-scrollbar-track { background: transparent; }
-.detail-panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
-.detail-panel-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.detail-hdr-right { display: flex; align-items: center; gap: 10px; }
-.detail-layout { display: flex; flex-direction: row; gap: 24px; flex: 1; min-height: 0; align-items: stretch; overflow-x: auto; }
-.detail-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
-.detail-meta-box { background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.detail-meta-box .detail-label { min-width: 100px; }
-.detail-meta-box .detail-value { flex: 1; }
-.detail-radar-bottom { margin-top: auto; display: flex; align-items: flex-end; justify-content: flex-start; }
-.detail-right { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; width: 735px; justify-content: flex-end; }
-.detail-row { display: flex; align-items: center; gap: 6px; padding: 4px 0 4px 12px; }
-.detail-label { color: var(--color-text-muted); font-size: 0.78rem; min-width: 110px; text-align: left; }
-.detail-value { color: var(--color-text); font-size: 0.85rem; }
-.detail-title { color: var(--color-primary); font-size: 0.85rem; font-weight: bold; font-family: 'Cinzel', serif; letter-spacing: 1px; }
-.detail-close { background: none; border: 1px solid var(--border-color); color: var(--color-text-muted); font-size: 1.2rem; cursor: pointer; padding: 2px 8px; border-radius: 3px; flex-shrink: 0; }
-.detail-close:hover { color: var(--color-danger); border-color: var(--color-danger); }
-.copy-btn { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--color-text-muted); font-size: 0.72rem; padding: 2px 8px; border-radius: 3px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'Crimson Text', serif; }
-.copy-btn:hover { color: var(--color-warn); border-color: var(--color-warn); }
-.copy-btn:disabled { opacity: 0.3; }
-
-.gif-preview-box { background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: 4px; aspect-ratio: 826 / 647; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
-.gif-preview-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
-.gif-preview-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); color: rgba(255,255,255,0.12); font-size: 1.4rem; font-family: 'Cinzel', serif; letter-spacing: 3px; user-select: none; }
-.gif-preview-placeholder.clickable { cursor: pointer; color: rgba(255,255,255,0.2); white-space: nowrap; }
-.gif-preview-placeholder.clickable:hover { color: rgba(255,255,255,0.4); background: rgba(0,0,0,0.4); }
-.muted { color: var(--color-text-muted); }
-
-/* ── 雷达图区域 ── */
-.detail-radar-zone { margin-top: 16px; display: flex; justify-content: center; }
-.radar-skeleton { width: 300px; height: 80px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border-color); color: var(--color-text-muted); font-size: 0.72rem; border-radius: 4px; }
-.radar-metric-toggles { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.radar-chip { background: rgba(0,180,216,0.08); border: 1px solid var(--color-primary); color: var(--color-primary); padding: 1px 7px; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 0.65rem; user-select: none; }
-.radar-chip.off { background: transparent; border-color: var(--border-color); color: var(--color-text-muted); }
 </style>

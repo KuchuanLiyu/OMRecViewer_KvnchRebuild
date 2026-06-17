@@ -221,7 +221,7 @@ async function copyChartToClipboard() {
 </template>
 
 <style scoped>
-.radar-wrapper { display: flex; flex-direction: column; background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: 4px; padding: 16px; width: 480px; flex-shrink: 0; user-select: none;
+.radar-wrapper { display: flex; flex-direction: column; background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: 4px; padding: 16px; width: 100%; max-width: 480px; user-select: none;
   --radar-accent: #e0c070; --radar-primary: #c0a060;
   --radar-grid: #2d2d2d; --radar-axis: #3d3d3d; --radar-label: #6a6a6a;
   --radar-poly-fill: rgba(224, 192, 112, 0.14); --radar-poly-stroke: var(--radar-accent);

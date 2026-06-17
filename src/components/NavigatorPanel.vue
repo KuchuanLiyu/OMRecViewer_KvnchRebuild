@@ -120,7 +120,9 @@ function drawHeatmap() {
   const gapMin = pts.reduce((m, p) => Math.min(m, p.gap), 0);
   const logX = pts.map(p => Math.log(p.x)), logY = pts.map(p => Math.log(p.y));
   const xMin = Math.min(...logX), xMax = Math.max(...logX), yMin = Math.min(...logY), yMax = Math.max(...logY);
-  const dpr = window.devicePixelRatio || 1, W = 1000, H = 760;
+  const dpr = window.devicePixelRatio || 1;
+  const pw = canvas.parentElement!.clientWidth;
+  const W = Math.max(pw, 300), H = Math.round(W * 0.76);
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx.scale(dpr, dpr);
@@ -263,9 +265,9 @@ function onHeatClick(e: MouseEvent) {
 .nav-btn:hover:not(:disabled) { background: var(--color-warn); }
 .nav-btn:disabled { opacity: 0.45; }
 .nav-btn.loading { background: var(--border-color); color: var(--color-text-muted); }
-.nav-body { display: grid; grid-template-columns: 1fr 260px; gap: 16px; align-items: start; }
+.nav-body { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; align-items: start; }
 .nav-left { min-width: 0; }
-.nav-right-col { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; padding-top: 1.2cm; }
+.nav-right-col { min-width: 0; display: flex; flex-direction: column; padding-top: 1.2cm; }
 .nav-right { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 .nav-right::-webkit-scrollbar { width: 4px; }
 .nav-right::-webkit-scrollbar-track { background: transparent; }
@@ -289,9 +291,9 @@ function onHeatClick(e: MouseEvent) {
 .heatmap-axis-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px; }
 .heat-chip { background: var(--bg-deep); border: 1px solid var(--border-color); color: var(--color-text-muted); padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 0.72rem; user-select: none; font-weight: bold; }
 .heat-chip.on { background: rgba(192,160,96,0.15); border-color: var(--color-accent); color: var(--color-accent); }
-.heat-canvas-wrap { position: relative; aspect-ratio: 1000 / 760; max-width: 100%; }
-.heat-canvas { width: 100%; height: 100%; border-radius: 4px; }
-.heat-copy-btn { position: absolute; top: 0.2cm; right: 0; z-index: 1; background: rgba(0,0,0,0.6); border: 1px solid var(--border-color); color: var(--color-text-muted); font-family: 'Crimson Text', serif; font-size: 0.65rem; padding: 2px 8px; border-radius: 3px; cursor: pointer; }
+.heat-canvas-wrap { position: relative; }
+.heat-canvas { width: 100%; display: block; border-radius: 4px; }
+.heat-copy-btn { position: absolute; top: 4px; right: 4px; z-index: 1; background: rgba(0,0,0,0.6); border: 1px solid var(--border-color); color: var(--color-text-muted); font-family: 'Crimson Text', serif; font-size: 0.65rem; padding: 2px 8px; border-radius: 3px; cursor: pointer; }
 .heat-copy-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .heat-tooltip { position: absolute; background: rgba(0,0,0,0.85); color: var(--color-accent); font-family: 'Crimson Text', monospace; font-size: 0.68rem; padding: 4px 8px; border-radius: 3px; pointer-events: none; white-space: nowrap; z-index: 10; }
 .nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: flex; align-items: center; justify-content: center; }
@@ -312,4 +314,10 @@ function onHeatClick(e: MouseEvent) {
 .target td { color: var(--color-accent); font-weight: bold; }
 .ally td { color: var(--color-primary); }
 .aw { color: var(--color-warn); font-weight: bold; }
+
+@media (max-width: 50rem) {
+  .nav-body { grid-template-columns: 1fr; }
+  .nav-right-col { padding-top: 0; }
+  .nav-right { max-height: 280px; }
+}
 </style>
