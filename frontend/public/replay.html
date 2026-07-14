@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>omclone replay</title>
+    <style>
+        html, body, canvas {
+            margin: 0; padding: 0; overflow: hidden;
+            display: flex; flex-flow: column;
+            height: 100%; width: 100%;
+            background: #000;
+        }
+        #header_div { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header" id="header_div">
+        <input type="file" id="puzzle-selector" accept=".puzzle">
+        <input type="file" id="solution-selector" accept=".solution">
+    </div>
+    <canvas id="glcanvas" tabindex='1' oncontextmenu="return false;"></canvas>
+    <script src="/omclone_gl.js"></script>
+    <script src="/omclone_jsutils.js"></script>
+    <script>
+        // Accept postMessage from parent window (iframe mode)
+        // Also accept from opener (popup mode, for fallback)
+        function on_init() {
+            function handleLoad(data) {
+                if (data && typeof data === 'object' && data.command && data.command === 'load') {
+                    wasm_exports.js_load_puzzle(js_object(data.puzzle));
+                    wasm_exports.js_load_solution(js_object(data.solution));
+                }
+            }
+
+            // iframe mode: listen to parent
+            window.addEventListener('message', function (e) {
+                handleLoad(e.data);
+                if (e.data && e.data.command === 'load') {
+                    // Notify parent: replay started
+                    window.parent.postMessage({ status: 'playing' }, '*');
+                }
+            });
+
+            // popup mode: listen to opener
+            if (window.opener && window.opener !== window) {
+                window.addEventListener('message', function (e) {
+                    handleLoad(e.data);
+                });
+                window.opener.postMessage({ status: 'ready' }, '*');
+            }
+
+            // Notify parent/opener: WASM initialized
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ status: 'ready' }, '*');
+            }
+        }
+
+        miniquad_add_plugin({ on_init });
+        load("omclone.wasm");
+    </script>
+</body>
+</html>
