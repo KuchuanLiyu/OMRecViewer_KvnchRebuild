@@ -231,7 +231,7 @@ watch([() => props.allRecords, dimX, dimY, showGaps], () => {
   border-radius: 10px; padding: 12px; max-height: 440px; overflow-y: auto;
 }
 .weakness-title { color: #d45a4a; font-size: 0.66rem; font-weight: 600; font-family: 'Cinzel', serif; letter-spacing: 1px; margin-bottom: 4px; }
-.weakness-desc { color: #807860; font-size: 0.55rem; margin-bottom: 8px; line-height: 1.4; }
+.weakness-desc { color: #807860; font-size: 0.62rem; margin-bottom: 8px; line-height: 1.4; }
 .weak-row {
   display: flex; align-items: center; gap: 6px; padding: 4px 6px;
   border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.62rem;
@@ -240,6 +240,6 @@ watch([() => props.allRecords, dimX, dimY, showGaps], () => {
 .weak-row:hover, .weak-row.hovered { background: rgba(201,168,76,0.06); }
 .weak-rank { color: #d45a4a; font-weight: 600; min-width: 30px; }
 .weak-label { color: #e0d8c8; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.weak-tag { background: rgba(212,90,74,0.15); color: #d45a4a; font-size: 0.55rem; padding: 2px 5px; border-radius: 4px; font-weight: 600; }
-.weak-none { color: #807860; font-size: 0.6rem; font-style: italic; line-height: 1.4; }
+.weak-tag { background: rgba(212,90,74,0.15); color: #d45a4a; font-size: 0.62rem; padding: 2px 5px; border-radius: 4px; font-weight: 600; }
+.weak-none { color: #807860; font-size: 0.66rem; font-style: italic; line-height: 1.4; }
 </style>

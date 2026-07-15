@@ -137,7 +137,8 @@ const aggregatedRecords = computed(() => {
     return {
       ...item,
       derived: { sum, sum4, ga, ca, gc },
-      isPareto: item.hasPareto
+      isPareto: item.hasPareto,
+      strengths: [] as string[],
     };
   });
 
@@ -159,6 +160,26 @@ const aggregatedRecords = computed(() => {
       default: return 0;
     }
   };
+
+  // ── Compute strength badges (top 25% per dimension among Pareto) ──
+  const strengthDims = ["cost","cycles","area","instructions","height","width","boundingHex","rate"];
+  const paretoOnly = result.filter(r => r.isPareto);
+  const paretoVals: Record<string, number[]> = {};
+  for (const d of strengthDims) {
+    paretoVals[d] = paretoOnly.map(r => getVal(r, d)).filter(v => v > 0).sort((a,b) => a-b);
+  }
+  for (const r of result) {
+    const strong: string[] = [];
+    for (const d of strengthDims) {
+      const v = getVal(r, d);
+      if (v <= 0) continue;
+      const arr = paretoVals[d];
+      if (arr.length < 3) continue;
+      const pct = arr.filter(x => x <= v).length / arr.length;
+      if (pct <= 0.25) strong.push(d === "boundingHex" ? "B" : d === "instructions" ? "I" : d === "height" ? "H" : d === "width" ? "W" : d === "rate" ? "R" : d.charAt(0).toUpperCase());
+    }
+    (r as any).strengths = strong;
+  }
   result.sort((a, b) => {
     for (const k of keys) {
       const va = getVal(a, k);
@@ -193,6 +214,24 @@ function onRowMouseEnter(rec: OmRecordDTO) {
 function onRowMouseLeave() {
   if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
   leaveTimer = setTimeout(() => { hoveredRecord.value = null; }, 400);
+}
+
+// ── Copy score ──
+const copiedId = ref<string | null>(null);
+async function copyScore(rec: OmRecordDTO) {
+  if (!rec.score) return;
+  const s = rec.score;
+  const text = `Cost:${s.cost} Cycles:${s.cycles} Area:${s.area} Instr:${s.instructions}` +
+    (s.height != null ? ` H:${s.height}` : '') +
+    (s.width != null ? ` W:${s.width}` : '') +
+    (s.boundingHex != null ? ` B:${s.boundingHex}` : '') +
+    (s.rate != null ? ` R:${s.rate}` : '') +
+    (s.trackless ? ' T' : '') + (!s.overlap ? ' L' : '');
+  try {
+    await navigator.clipboard.writeText(text);
+    copiedId.value = rec.id;
+    setTimeout(() => { copiedId.value = null; }, 1200);
+  } catch { /* ignore */ }
 }
 function closePreview() { hoveredRecord.value = null; }
 function onPanelEnter() {
@@ -301,10 +340,10 @@ const handleHeaderClick = (expr: string) => {
       <span class="puzzle-id">#{{ puzzleInfo.id }}</span>
     </div>
 
-    <ImprovePanel v-if="viewMode === 'improve'" :allRecords="props.records" />
-    <AnalysisPanel v-if="viewMode === 'analysis'" :allRecords="props.records" />
-
-    <div v-if="viewMode !== 'improve' && viewMode !== 'analysis'" class="matrix-container">
+    <Transition name="view-switch" mode="out-in">
+      <ImprovePanel v-if="viewMode === 'improve'" :key="'improve'" :allRecords="props.records" />
+      <AnalysisPanel v-else-if="viewMode === 'analysis'" :key="'analysis'" :allRecords="props.records" />
+      <div v-else :key="'table'" class="matrix-container">
       <table class="matrix-table">
         <thead>
           <tr>
@@ -324,7 +363,10 @@ const handleHeaderClick = (expr: string) => {
             <td class="category-cell">
               <span class="cat-prefix">{{ item.categories.length > 0 ? item.categories.join(", ") : "—" }}</span>
             </td>
-            <td class="score-string">
+            <td class="score-string" @click.stop="copyScore(item.record)" title="Click score to copy">
+              <span v-if="item.strengths.length > 0" class="strength-inline">
+                <span v-for="d in item.strengths" :key="d">{{ d }}</span>
+              </span>
               <template v-if="item.record.fullFormattedScore">
                 <span v-if="scoreView !== 'inf'" class="score-line">{{ splitScore(item.record.fullFormattedScore).v }}</span>
                 <span v-if="scoreView !== 'v' && splitScore(item.record.fullFormattedScore).inf" class="score-line score-inf">{{ splitScore(item.record.fullFormattedScore).inf }}</span>
@@ -332,6 +374,7 @@ const handleHeaderClick = (expr: string) => {
               <template v-else>
                 <span class="score-full">{{ item.record.score!.cost }}g/{{ item.record.score!.cycles }}c/{{ item.record.score!.area }}a/{{ item.record.score!.instructions }}i<span v-if="item.record.score!.height != null">/{{ item.record.score!.height }}h</span><span v-if="item.record.score!.width != null">/{{ item.record.score!.width }}w</span><span v-if="item.record.score!.boundingHex != null">/{{ item.record.score!.boundingHex }}b</span><span v-if="item.record.score!.trackless">/T</span><span v-if="!item.record.score!.overlap">/L</span></span>
               </template>
+              <span v-if="copiedId === item.record.id" class="copied-toast">✓ Copied</span>
             </td>
             <td class="num-val">{{ item.derived.sum }}</td>
             <td class="num-val">{{ item.derived.sum4 }}</td>
@@ -352,6 +395,7 @@ const handleHeaderClick = (expr: string) => {
         </tbody>
       </table>
     </div>
+    </Transition>
 
     <div v-if="selectedRecord" class="detail-overlay" @click.self="selectedRecord = null">
       <div class="detail-modal">
@@ -414,18 +458,25 @@ const handleHeaderClick = (expr: string) => {
 
 .mode-btn {
   background: none; border: none; color: #807860; padding: 6px 14px;
-  font-family: 'Cinzel', serif; font-size: 0.64rem; font-weight: 600;
-  cursor: pointer; border-radius: 6px; letter-spacing: 1px;
+  font-family: 'Cinzel', serif; font-size: 0.62rem; font-weight: 600;
+  cursor: pointer; border-radius: 6px; letter-spacing: 1.5px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative; z-index: 1;
 }
+.mode-btn::after {
+  content: ''; position: absolute; bottom: 0; left: 25%; right: 25%; height: 2px;
+  background: #c9a84c; border-radius: 1px;
+  transform: scaleX(0); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mode-btn.active::after { transform: scaleX(1); }
 .mode-btn.active {
-  background: rgba(201,168,76,0.15); color: #e2c96e;
-  box-shadow: 0 0 12px rgba(201,168,76,0.1);
+  background: rgba(201,168,76,0.1); color: #e2c96e;
 }
 .mode-btn:hover:not(.active) { color: #c0b898; }
-.mode-btn.improve-btn.active { background: rgba(196,122,90,0.2); color: #e8a080; box-shadow: 0 0 12px rgba(196,122,90,0.15); }
-.mode-btn.analysis-btn.active { background: rgba(196,122,90,0.2); color: #e8a080; box-shadow: 0 0 12px rgba(196,122,90,0.15); }
+.mode-btn.improve-btn.active { background: rgba(196,122,90,0.15); color: #e8a080; }
+.mode-btn.improve-btn::after { background: #c47a5a; }
+.mode-btn.analysis-btn.active { background: rgba(129,140,248,0.12); color: #a5b4fc; }
+.mode-btn.analysis-btn::after { background: #818cf8; }
 .mode-btn.download-btn {
   color: #c9a84c; border: 1px solid rgba(201,168,76,0.25); border-radius: 6px;
   padding: 5px 12px; font-size: 0.62rem;
@@ -456,10 +507,10 @@ const handleHeaderClick = (expr: string) => {
   border-radius: var(--radius-lg, 12px); overflow: hidden;
   box-shadow: 0 2px 16px rgba(0,0,0,0.3);
 }
-.matrix-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; text-align: left; }
-th, td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.matrix-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; text-align: left; }
+th, td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); }
 th {
-  background: rgba(0,0,0,0.2); color: #807860; font-size: 0.64rem; font-weight: 500;
+  background: rgba(0,0,0,0.2); color: #807860; font-size: 0.68rem; font-weight: 500;
   font-family: 'Cinzel', serif; letter-spacing: 1px;
   border-bottom: 1px solid rgba(201,168,76,0.2);
   position: sticky; top: 0; z-index: 2;
@@ -470,7 +521,17 @@ th {
 
 .matrix-row {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rowIn 0.4s ease-out both;
 }
+.matrix-row:nth-child(1) { animation-delay: 0.02s; }
+.matrix-row:nth-child(2) { animation-delay: 0.04s; }
+.matrix-row:nth-child(3) { animation-delay: 0.06s; }
+.matrix-row:nth-child(4) { animation-delay: 0.08s; }
+.matrix-row:nth-child(5) { animation-delay: 0.10s; }
+.matrix-row:nth-child(6) { animation-delay: 0.12s; }
+.matrix-row:nth-child(7) { animation-delay: 0.14s; }
+.matrix-row:nth-child(8) { animation-delay: 0.16s; }
+@keyframes rowIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .matrix-row:hover { background: rgba(201,168,76,0.04); }
 .matrix-row.row-hovered {
   background: rgba(201,168,76,0.08) !important;
@@ -488,7 +549,31 @@ th {
 .num-val { color: #c9a84c; }
 .num-val.sort-highlight { color: #c47a5a; font-weight: 700; background: rgba(196,122,90,0.06); }
 
-.multiplier-cell { color: #807860; font-size: 0.72rem; display: flex; gap: 8px; }
+.multiplier-cell { color: #807860; font-size: 0.72rem; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.copied-toast {
+  position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+  background: #5aae6f; color: #0c0a06; padding: 2px 8px; border-radius: 4px;
+  font-size: 0.62rem; font-weight: 700; white-space: nowrap;
+  animation: toastPop 1.2s ease-out forwards; pointer-events: none; z-index: 5;
+}
+@keyframes toastPop {
+  0% { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+}
+.score-string { position: relative; }
+
+.strength-inline {
+  color: #818cf8; font-weight: 700; font-size: 0.66rem;
+  margin-right: 6px; display: inline-flex; gap: 3px;
+}
+
+/* ── View transitions ── */
+.view-switch-enter-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.view-switch-leave-active { transition: all 0.2s ease-in; }
+.view-switch-enter-from { opacity: 0; transform: translateY(12px); }
+.view-switch-leave-to { opacity: 0; transform: translateY(-8px); }
 .m-item { background: rgba(0,0,0,0.2); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); }
 
 .puzzle-header {

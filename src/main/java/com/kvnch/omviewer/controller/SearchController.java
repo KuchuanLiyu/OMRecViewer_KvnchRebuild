@@ -29,11 +29,14 @@ public class SearchController {
 
     private final PuzzleService puzzleService;
     private final Path puzzleDir;
+    private final com.kvnch.omviewer.service.ZlbbApiClient apiClient;
 
     public SearchController(PuzzleService puzzleService,
-                            @Value("${app.puzzle-dir:./puzzles}") String puzzleDirPath) {
+                            @Value("${app.puzzle-dir:./puzzles}") String puzzleDirPath,
+                            com.kvnch.omviewer.service.ZlbbApiClient apiClient) {
         this.puzzleService = puzzleService;
         this.puzzleDir = Paths.get(puzzleDirPath);
+        this.apiClient = apiClient;
     }
 
     private void flog(String msg) {
@@ -56,6 +59,25 @@ public class SearchController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /** Return puzzles grouped by chapter (fetches from ZLBB puzzle API). */
+    @GetMapping("/puzzles")
+    public ResponseEntity<java.util.Map<String, java.util.List<java.util.Map<String, String>>>> listPuzzles() {
+        java.util.Map<String, java.util.List<java.util.Map<String, String>>> grouped = new java.util.LinkedHashMap<>();
+        for (String ctrl : new String[]{"om", "exa"}) {
+            var arr = apiClient.fetchPuzzles(ctrl);
+            if (arr == null) continue;
+            for (var p : arr) {
+                String chapter = (p.getGroup() != null) ? p.getGroup().getDisplayName() : "Other";
+                var m = new java.util.HashMap<String, String>();
+                m.put("id", p.getId());
+                m.put("displayName", p.getDisplayName());
+                m.put("controller", ctrl);
+                grouped.computeIfAbsent(chapter, k -> new java.util.ArrayList<>()).add(m);
+            }
+        }
+        return ResponseEntity.ok(grouped);
     }
 
     @GetMapping("/suggestions")

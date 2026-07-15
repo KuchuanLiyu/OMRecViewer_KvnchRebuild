@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import OmList from "./components/OmList.vue";
+import PuzzleBrowser from "./components/PuzzleBrowser.vue";
+import HomeDashboard from "./components/HomeDashboard.vue";
 import type { OmRecordDTO } from "./types/om";
 import type { UniversalSuggestion } from "./api/omApi";
 import { searchOmRecords, getLivePuzzleSuggestions, checkBootReady, getCachePath, getCacheInfo } from "./api/omApi";
 import { t, locale, type Locale } from "./utils/i18n";
 import { logBus } from "./utils/logBus";
+const logOpen = ref(false);
+const lastLog = computed(() => logBus.length > 0 ? logBus[logBus.length - 1] : null);
 watch(locale, (v) => { document.documentElement.lang = v; }, { immediate: true });
 
 const searchKeyword = ref<string>("");
 const suggestions = ref<UniversalSuggestion[]>([]);
 const showSuggestions = ref<boolean>(false);
+const recentSearches = ref<{id:string;name:string}[]>([]);
+function loadRecentSearches() {
+  try { const raw = localStorage.getItem("recentPuzzles"); if (raw) recentSearches.value = JSON.parse(raw).slice(0,5); }
+  catch { recentSearches.value = []; }
+}
+loadRecentSearches();
 
 const currentRecords = ref<OmRecordDTO[]>([]);
+const dashRef = ref<InstanceType<typeof HomeDashboard> | null>(null);
 const loading = ref<boolean>(false);
 const errorMessage = ref<string | null>(null);
 const hasSearched = ref<boolean>(false);
@@ -76,6 +87,8 @@ const executeFinalQuery = async (puzzleId: string) => {
 
   try {
     currentRecords.value = await searchOmRecords(puzzleId, forceRefresh.value);
+    dashRef.value?.addRecent(puzzleId, currentRecords.value[0]?.puzzle?.displayName ?? puzzleId);
+    loadRecentSearches();
   } catch (err) {
     errorMessage.value = String(err);
   } finally {
@@ -106,51 +119,70 @@ const closeSuggestions = () => {
   <div class="app-container">
     <aside class="sidebar-panel">
       <div class="brand-zone">
-        <div class="logo-icon"><img src="/icon.png" alt="Opus Magnum" class="logo-img" /></div>
+        <div class="logo-icon">
+          <img src="/icon.png" alt="Opus Magnum" class="logo-img" />
+        </div>
         <div class="brand-text">
           <h2>{{ t('brand_title') }}</h2>
-          <span>{{ t('brand_sub') }}</span>
+          <span class="brand-subtitle">{{ t('brand_sub') }}</span>
         </div>
       </div>
       <hr class="divider" />
-      <div class="lang-switch">
-        <label class="section-label">{{ t('lang_label') }}</label>
-        <select v-model="locale" class="lang-select">
-          <option value="en">English</option>
-          <option value="zh">中文</option>
-          <option value="ja">日本語</option>
-        </select>
-      </div>
+
       <div class="control-group">
-        <label class="section-label">{{ t('section_query') }}</label>
-        <div class="search-field-wrapper">
-          <div class="input-container">
-            <input
-              type="text"
-              v-model="searchKeyword"
-              :placeholder="t('placeholder_search')"
-              @keyup.enter="handleEnterKey"
-              @focus="showSuggestions = true"
-              @blur="closeSuggestions"
-              :disabled="loading"
-              class="cyber-input"
-            />
-            <ul v-if="showSuggestions && suggestions.length > 0" class="suggestions-menu">
-              <li v-for="s in suggestions" :key="s.id" @mousedown="selectSuggestion(s)" class="suggestion-item">
-                <span class="s-name">{{ s.displayName }}</span>
-                <span class="s-id">[{{ s.controller.toUpperCase() }}] #{{ s.id }}</span>
+        <div class="input-container">
+          <input
+            type="text" v-model="searchKeyword"
+            :placeholder="t('placeholder_search')"
+            @keyup.enter="handleEnterKey" @focus="showSuggestions = true" @blur="closeSuggestions"
+            :disabled="loading" class="cyber-input"
+          />
+          <ul v-if="showSuggestions && (suggestions.length > 0 || !searchKeyword.trim())" class="suggestions-menu">
+            <template v-if="!searchKeyword.trim() && recentSearches.length > 0">
+              <li class="sug-header">Recent</li>
+              <li v-for="r in recentSearches" :key="r.id" @mousedown="executeFinalQuery(r.id); showSuggestions=false" class="suggestion-item recent-item">
+                <span class="s-name">{{ r.name }}</span>
+                <span class="s-id">#{{ r.id }}</span>
               </li>
-            </ul>
-          </div>
+            </template>
+            <template v-else>
+            <li v-for="s in suggestions" :key="s.id" @mousedown="selectSuggestion(s)" class="suggestion-item">
+              <span class="s-name">{{ s.displayName }}</span>
+              <span class="s-id">[{{ s.controller.toUpperCase() }}] #{{ s.id }}</span>
+            </li>
+            </template>
+          </ul>
+        </div>
+        <div class="search-actions">
           <button @click="handleEnterKey" :disabled="loading || !searchKeyword.trim()" class="btn-execute">{{ t('btn_execute') }}</button>
-          <button @click="forceRefresh = !forceRefresh; if (forceRefresh) executeRefresh()" class="btn-execute" style="margin-top:6px" :class="{ active: forceRefresh }">{{ t('btn_refresh') }}</button>
+          <button @click="forceRefresh = !forceRefresh; if (forceRefresh) executeRefresh()" class="btn-refresh" :class="{ active: forceRefresh }">{{ t('btn_refresh') }}</button>
         </div>
       </div>
+      <hr class="divider" />
+
+      <PuzzleBrowser @select="selectSuggestion" />
+      <hr class="divider" />
+
+      <!-- Language pill toggle -->
+      <div class="lang-zone">
+        <div class="lang-pills">
+          <button v-for="opt in (['en','zh','ja'] as Locale[])" :key="opt"
+            class="lang-pill" :class="{ active: locale === opt }"
+            @click="locale = opt"
+          >{{ opt === 'en' ? 'EN' : opt === 'zh' ? '中文' : '日本語' }}</button>
+        </div>
+      </div>
+
+      <!-- Status ring -->
       <div class="status-zone">
-        <label class="section-label">{{ t('section_diag') }}</label>
-        <div class="status-card" :class="{ 'is-loading': loading, 'is-error': errorMessage, 'is-syncing': !bootReady }">
-          <div :class="['pulse-light', loading ? 'warning' : !bootReady ? 'syncing' : errorMessage ? 'danger' : 'success']"></div>
-          <span class="status-text">{{ !bootReady ? t('status_syncing') : loading ? t('status_fetching') : errorMessage ? t('status_error') : t('status_ready') }}</span>
+        <div class="status-ring" :class="{ 'is-loading': loading, 'is-error': errorMessage, 'is-syncing': !bootReady }">
+          <svg viewBox="0 0 40 40" class="status-svg">
+            <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" stroke-width="2" opacity="0.15"/>
+            <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-dasharray="100" :stroke-dashoffset="bootReady ? 0 : 60"
+              style="transition: stroke-dashoffset 0.6s ease" opacity="0.8"/>
+          </svg>
+          <span class="status-label">{{ !bootReady ? t('status_syncing') : loading ? t('status_fetching') : errorMessage ? t('status_error') : t('status_ready') }}</span>
         </div>
         <p v-if="errorMessage" class="error-details">> {{ errorMessage }}</p>
         <p class="cache-path">{{ t('cache_label') }} {{ cachePath }}</p>
@@ -159,25 +191,34 @@ const closeSuggestions = () => {
     </aside>
     <main class="main-workspace">
       <header class="workspace-header">
-        <div class="breadcrumb">{{ t('breadcrumb') }}</div>
-        <div class="timestamp">{{ t('sys_online') }}</div>
+        <div class="header-left">
+          <span class="hdr-icon">⬡</span>
+          <div class="breadcrumb">{{ t('breadcrumb') }}</div>
+        </div>
+        <div class="header-right">
+          <span class="hdr-dot"></span>
+          <span class="timestamp">{{ t('sys_online') }}</span>
+        </div>
       </header>
       <section class="data-view-panel">
-        <div v-if="!hasSearched" class="dashboard-welcome">
-          <div class="welcome-terminal">
-            <p class="console-line">{{ t('welcome_line1') }}</p>
-            <p class="console-line">{{ t('welcome_line2') }}</p>
-          </div>
-        </div>
+        <HomeDashboard v-if="!hasSearched" ref="dashRef" @search="(id: string) => executeFinalQuery(id)" />
         <OmList v-else :records="currentRecords" />
       </section>
 
-      <!-- Debug log panel (bottom-left) -->
-      <div v-if="logBus.length > 0" class="log-panel">
-        <div v-for="(entry, i) in logBus.slice(-8)" :key="i" class="log-line"
-          :class="{ 'log-ok': entry.ok === true, 'log-fail': entry.ok === false }">
-          <span class="log-time">{{ entry.time }}</span>
-          <span class="log-msg">{{ entry.msg }}</span>
+      <!-- Collapsible log panel -->
+      <div class="log-float" :class="{ open: logOpen }">
+        <button class="log-toggle" @click="logOpen = !logOpen" :title="logOpen ? 'Collapse' : 'Expand log'">
+          <span class="log-dot" :class="{ 'log-dot-ok': lastLog?.ok === true, 'log-dot-fail': lastLog?.ok === false }"></span>
+          <span class="log-label">{{ lastLog?.msg ?? 'Log' }}</span>
+          <span class="log-chevron" :class="{ open: logOpen }">▶</span>
+        </button>
+        <div v-if="logOpen" class="log-body">
+          <div v-if="logBus.length === 0" class="log-empty">No events yet</div>
+          <div v-for="(entry, i) in logBus.slice(-12)" :key="i" class="log-line"
+            :class="{ 'log-ok': entry.ok === true, 'log-fail': entry.ok === false }">
+            <span class="log-time">{{ entry.time }}</span>
+            <span class="log-msg">{{ entry.msg }}</span>
+          </div>
         </div>
       </div>
     </main>
@@ -223,8 +264,8 @@ body {
   background-color: var(--bg-deepest);
   color: var(--text);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.55;
   overflow: hidden;
 }
 
@@ -282,109 +323,109 @@ body {
 }
 
 .brand-zone { display: flex; align-items: center; gap: 12px; }
-.logo-icon {
-  width: 38px; height: 38px;
-  filter: drop-shadow(0 0 10px rgba(201,168,76,0.35));
-  transition: filter 0.3s var(--ease-out);
-}
-.logo-icon:hover { filter: drop-shadow(0 0 16px rgba(201,168,76,0.55)); }
+.logo-icon { width: 36px; height: 36px; flex-shrink: 0; filter: drop-shadow(0 0 8px rgba(201,168,76,0.3)); }
 .logo-img { width: 100%; height: 100%; object-fit: contain; }
 .brand-text h2 {
-  margin: 0; font-size: 0.95rem; font-weight: 700;
+  margin: 0; font-size: 0.9rem; font-weight: 700;
   font-family: 'Cinzel', serif;
-  color: var(--gold-light);
-  letter-spacing: 2px;
-  transition: color 0.3s var(--ease-out);
-}
-.brand-text span {
-  font-size: 0.58rem; font-weight: 600;
-  font-family: 'Cinzel', serif;
-  color: var(--gold-dim);
+  color: var(--gold-light, #e2c96e);
   letter-spacing: 3px;
-  text-transform: uppercase;
 }
-
-.divider { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--border-gold-solid), transparent); margin: 0; opacity: 0.5; }
-
-.lang-switch { margin-bottom: 2px; }
-.lang-select {
-  width: 100%; background: var(--bg-input); color: var(--text-muted);
-  border: 1px solid var(--border-color); padding: 7px 10px; border-radius: var(--radius-sm);
-  font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; outline: none;
-  cursor: pointer;
-  transition: border-color 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
-}
-.lang-select:focus {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(201,168,76,0.15);
-}
-
-.section-label {
-  display: block; font-size: 0.6rem; font-weight: 600;
+.brand-subtitle {
+  font-size: 0.52rem; font-weight: 600;
   font-family: 'Cinzel', serif;
-  color: var(--gold-dim);
-  letter-spacing: 2px;
+  color: #5a4a2a;
+  letter-spacing: 2.5px;
   text-transform: uppercase;
-  margin-bottom: 8px;
 }
 
-.search-field-wrapper { display: flex; flex-direction: column; gap: 8px; }
+.divider { border: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(201,168,76,0.2), transparent); margin: 0; }
+
+/* ── Search ── */
 .input-container { position: relative; width: 100%; }
-
+.search-actions { display: flex; gap: 6px; margin-top: 6px; }
 .cyber-input {
-  width: 100%; background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  color: var(--text); padding: 10px 12px;
-  border-radius: var(--radius-sm); box-sizing: border-box;
-  font-size: 0.8rem; font-family: 'JetBrains Mono', monospace;
+  width: 100%; background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text, #e0d8c8); padding: 9px 12px;
+  border-radius: 8px; box-sizing: border-box;
+  font-size: 0.76rem; font-family: 'JetBrains Mono', monospace;
   outline: none;
-  transition: border-color 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
-.cyber-input:focus {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(201,168,76,0.12);
+.cyber-input:focus { border-color: #c9a84c; box-shadow: 0 0 0 2px rgba(201,168,76,0.1); }
+.cyber-input::placeholder { color: #706858; }
+
+.btn-execute {
+  flex: 1; background: rgba(201,168,76,0.12); color: #e2c96e;
+  border: 1px solid rgba(201,168,76,0.25); padding: 8px; border-radius: 8px;
+  font-weight: 600; cursor: pointer; font-family: 'Cinzel', serif; font-size: 0.62rem;
+  letter-spacing: 2px; transition: all 0.25s ease;
 }
-.cyber-input::placeholder { color: var(--text-dim); }
+.btn-execute:hover:not(:disabled) { background: rgba(201,168,76,0.2); transform: translateY(-1px); }
+.btn-execute:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn-refresh {
+  background: none; color: #706858; border: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 10px; border-radius: 8px; font-family: 'Cinzel', serif;
+  font-size: 0.58rem; cursor: pointer; letter-spacing: 1px;
+  transition: all 0.25s ease;
+}
+.btn-refresh:hover { border-color: rgba(255,255,255,0.15); color: #a09888; }
+.btn-refresh.active { background: rgba(196,122,90,0.15); border-color: rgba(196,122,90,0.3); color: #e8a080; }
 
 .suggestions-menu {
   position: absolute; top: calc(100% + 4px); left: 0; width: 100%;
-  background: var(--bg-panel); border: 1px solid var(--border-gold);
-  border-radius: var(--radius-sm); padding: 0; margin: 0; list-style: none;
+  background: rgba(20,17,11,0.96); border: 1px solid rgba(201,168,76,0.2);
+  border-radius: 8px; padding: 0; margin: 0; list-style: none;
   z-index: 999; max-height: 200px; overflow-y: auto;
-  box-shadow: var(--shadow-elevated);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  backdrop-filter: blur(12px);
 }
 .suggestion-item {
   padding: 9px 12px; cursor: pointer; display: flex;
   justify-content: space-between; align-items: center;
-  font-size: 0.76rem; border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.15s var(--ease-out);
+  font-size: 0.72rem; border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s ease;
 }
+.sug-header { padding: 6px 12px 4px; font-size: 0.55rem; color: #5a5245; font-family: 'Cinzel', serif; letter-spacing: 2px; text-transform: uppercase; }
 .suggestion-item:last-child { border-bottom: none; }
-.suggestion-item:hover { background: var(--bg-hover); }
-.s-name { color: var(--text); }
-.s-id { color: var(--gold-dim); font-size: 0.64rem; }
+.suggestion-item:hover { background: rgba(201,168,76,0.06); }
+.recent-item .s-id { color: #706858; }
+.s-name { color: #e0d8c8; }
+.s-id { color: #8a7030; font-size: 0.6rem; }
 
-.btn-execute {
-  background: var(--border-gold-solid); color: var(--gold-light);
-  border: 1px solid var(--gold-dim); padding: 10px; min-height: 42px;
-  border-radius: var(--radius-sm); font-weight: 700; cursor: pointer;
-  font-family: 'Cinzel', serif; font-size: 0.7rem;
-  letter-spacing: 2px;
-  transition: all 0.25s var(--ease-out);
-  position: relative; overflow: hidden;
+/* ── Language pill toggle ── */
+.lang-zone { margin: 0; }
+.lang-pills {
+  display: flex; background: rgba(0,0,0,0.25);
+  border-radius: 8px; padding: 3px; border: 1px solid rgba(255,255,255,0.06);
 }
-.btn-execute::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%);
-  transform: translateX(-100%);
-  transition: transform 0.4s var(--ease-out);
+.lang-pill {
+  flex: 1; background: none; border: none; color: #706858;
+  padding: 6px 2px; border-radius: 6px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; font-weight: 500;
+  transition: all 0.25s ease;
 }
-.btn-execute:hover::after { transform: translateX(100%); }
-.btn-execute:hover { background: var(--gold-dim); color: var(--bg-deepest); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(201,168,76,0.2); }
-.btn-execute:active { transform: translateY(0); }
-.btn-execute.active { background: var(--copper); border-color: var(--copper); color: #fff; }
-.btn-execute:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+.lang-pill.active {
+  background: rgba(201,168,76,0.12); color: #e2c96e;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.lang-pill:hover:not(.active) { color: #a09888; }
+
+/* ── Status ring ── */
+.status-zone { margin-top: 4px; }
+.status-ring {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: rgba(0,0,0,0.15);
+  border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);
+}
+.status-svg { width: 28px; height: 28px; flex-shrink: 0; color: #5aae6f; }
+.status-ring.is-syncing .status-svg { color: #c9a84c; animation: ringPulse 1.5s ease-in-out infinite; }
+.status-ring.is-loading .status-svg { color: #c9a84c; animation: ringSpin 2s linear infinite; }
+.status-ring.is-error .status-svg { color: #d45a4a; }
+@keyframes ringPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+@keyframes ringSpin { to { transform: rotate(360deg); } }
+.status-label { font-size: 0.64rem; font-family: 'JetBrains Mono', monospace; color: #807860; }
 
 /* ── Status ── */
 .status-card {
@@ -419,15 +460,19 @@ body {
 }
 
 .workspace-header {
-  background: var(--bg-glass);
+  background: var(--bg-glass, rgba(26,23,18,0.85));
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-gold);
-  padding: 10px 24px; display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid rgba(201,168,76,0.12);
+  padding: 8px 24px; display: flex; justify-content: space-between; align-items: center;
   font-size: 0.7rem; position: relative; z-index: 2;
 }
-.breadcrumb { color: var(--gold-dim); font-weight: 500; font-family: 'Cinzel', serif; letter-spacing: 2px; }
-.timestamp { color: var(--text-dim); }
+.header-left { display: flex; align-items: center; gap: 10px; }
+.hdr-icon { color: #c9a84c; font-size: 0.8rem; opacity: 0.3; }
+.breadcrumb { color: var(--gold-dim, #8a7030); font-weight: 500; font-family: 'Cinzel', serif; letter-spacing: 2px; }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.hdr-dot { width: 6px; height: 6px; border-radius: 50%; background: #5aae6f; box-shadow: 0 0 6px rgba(90,174,111,0.4); }
+.timestamp { color: var(--text-dim, #706858); }
 
 .data-view-panel {
   flex: 1; padding: 18px; overflow-y: auto; position: relative; z-index: 1;
@@ -473,19 +518,40 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-gold-solid); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--gold-dim); }
 
-/* ── Debug log panel ── */
-.log-panel {
+/* ── Collapsible log float ── */
+.log-float {
   position: fixed; bottom: 12px; left: 12px; z-index: 300;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
+  max-width: 420px;
+}
+.log-toggle {
+  display: flex; align-items: center; gap: 8px;
   background: rgba(10,9,6,0.9); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
-  padding: 8px 12px; max-width: 500px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
-  pointer-events: none;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+  padding: 5px 12px; cursor: pointer;
+  color: #807860; font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
+  transition: all 0.2s ease;
 }
+.log-toggle:hover { border-color: rgba(255,255,255,0.15); }
+.log-dot { width: 7px; height: 7px; border-radius: 50%; background: #807860; flex-shrink: 0; }
+.log-dot-ok { background: #5aae6f; }
+.log-dot-fail { background: #d45a4a; }
+.log-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+.log-chevron { font-size: 0.4rem; transition: transform 0.2s ease; }
+.log-chevron.open { transform: rotate(90deg); }
+
+.log-body {
+  margin-top: 6px;
+  background: rgba(10,9,6,0.92); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+  padding: 8px 12px; max-height: 200px; overflow-y: auto;
+}
+.log-empty { color: #5a5245; padding: 4px 0; }
 .log-line { display: flex; gap: 8px; padding: 2px 0; color: #807860; }
 .log-line.log-ok { color: #5aae6f; }
 .log-line.log-fail { color: #d45a4a; }
-.log-time { opacity: 0.5; white-space: nowrap; }
+.log-time { opacity: 0.5; white-space: nowrap; flex-shrink: 0; }
 .log-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

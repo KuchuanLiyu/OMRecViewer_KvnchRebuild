@@ -8,6 +8,10 @@ import { mahalanobisAnalysis } from "../utils/mahalanobis";
 import { computeEllipse, subCov2x2, type Ellipse2D } from "../utils/ellipse2d";
 import { pcaProject } from "../utils/pca";
 import { knnIsolation, isolationColor, isolationRadius, type KnnResult } from "../utils/knn";
+import { localOutlierFactor, lofColor, type LofResult } from "../utils/lof";
+import { computeParetoDepth, type DepthResult } from "../utils/paretoDepth";
+import { dbscan, clusterColor, type DbscanResult } from "../utils/dbscan";
+import { kde2d, type KdeData } from "../utils/kde";
 import { t } from "../utils/i18n";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -44,6 +48,14 @@ const recs = ref<RecInfo[]>([]);
 const paretoRecsFor3D = ref<OmRecordDTO[]>([]);
 const knnResults = ref<KnnResult[]>([]);
 const knnById = ref<Map<string, KnnResult>>(new Map());
+// New algorithms
+const lofById = ref<Map<string, LofResult>>(new Map());
+const depthById = ref<Map<string, DepthResult>>(new Map());
+const depthMax = ref(0);
+const dbscanById = ref<Map<string, DbscanResult>>(new Map());
+const dbscanCount = ref(0);
+const kdeData = ref<KdeData | null>(null);
+const showKDE = ref(true);
 
 const logV = (v: number) => Math.log(Math.max(v, 1));
 function toSx(v: number, min: number, max: number) { return pad + (v - min) / (max - min) * (svgW - 2 * pad); }
@@ -143,18 +155,77 @@ function run() {
   });
   recs.value.sort((a,b)=>b.overallScore-a.overallScore);
 
-  // ── KNN 隔离检测 ──
-  const allKeysKnn = ["cost","cycles","area","instructions","height","width","boundingHex","rate"].filter(k => avail.value.includes(k));
-  const paretoVecs = paretoRecs.map(r => allKeysKnn.map(k => logV(getRaw(r.score!, k)!)));
-  if (paretoVecs.length >= 2 && allKeysKnn.length >= 2) {
-    const results = knnIsolation(paretoVecs);
+  // ── KNN 隔离检测 (在所有记录中算，维度跟随当前视图) ──
+  let knnKeys: string[];
+  if (viewDim.value === "nd") {
+    knnKeys = ["cost","cycles","area","instructions","height","width","boundingHex","rate"].filter(k => avail.value.includes(k));
+  } else if (viewDim.value === "3d") {
+    knnKeys = [dimX.value, dimY.value, dimZ.value].filter(k => avail.value.includes(k));
+  } else {
+    knnKeys = [dimX.value, dimY.value].filter(k => avail.value.includes(k));
+  }
+  // Use ALL scored records as the reference population, then only display KNN for Pareto
+  const allVecs = scored.map(r => knnKeys.map(k => logV(getRaw(r.score!, k)!)));
+  if (allVecs.length >= 2 && knnKeys.length >= 1) {
+    const results = knnIsolation(allVecs);
     knnResults.value = results;
+    // Build map from record id → KNN result (only for Pareto records)
     const idMap = new Map<string, KnnResult>();
+    const paretoIdSet = new Set(paretoRecs.map(r => r.id ?? ""));
     for (const r of results) {
-      const rec = paretoRecs[r.index];
-      if (rec) idMap.set(rec.id ?? "", r);
+      const rec = scored[r.index];
+      if (rec && paretoIdSet.has(rec.id ?? "")) {
+        idMap.set(rec.id ?? "", r);
+      }
     }
     knnById.value = idMap;
+  }
+
+  // ── LOF (Local Outlier Factor) ──
+  const allVecsLof = scored.map(r => knnKeys.map(k => logV(getRaw(r.score!, k)!)));
+  if (allVecsLof.length >= 3 && knnKeys.length >= 1) {
+    const lofResults = localOutlierFactor(allVecsLof);
+    const lofMap = new Map<string, LofResult>();
+    const paretoSet = new Set(paretoRecs.map(r => r.id ?? ""));
+    for (const r of lofResults) {
+      const rec = scored[r.index];
+      if (rec && paretoSet.has(rec.id ?? "")) lofMap.set(rec.id ?? "", r);
+    }
+    lofById.value = lofMap;
+  }
+
+  // ── Pareto Depth ──
+  const withCGA = scored.map(r => ({
+    cost: r.score!.cost, cycles: r.score!.cycles, area: r.score!.area,
+    id: r.id ?? "",
+  }));
+  const depthResults = computeParetoDepth(withCGA);
+  const depthMap = new Map<string, DepthResult>();
+  depthMax.value = 0;
+  for (const d of depthResults) {
+    depthMap.set(withCGA[d.index].id, d);
+    if (d.depth > depthMax.value) depthMax.value = d.depth;
+  }
+  depthById.value = depthMap;
+
+  // ── DBSCAN (on current view dimensions) ──
+  if (allVecsLof.length >= 3 && knnKeys.length >= 1) {
+    const dbResults = dbscan(allVecsLof);
+    dbscanCount.value = dbResults.clusterCount;
+    const dbMap = new Map<string, DbscanResult>();
+    const paretoSet = new Set(paretoRecs.map(r => r.id ?? ""));
+    for (const r of dbResults.clusters) {
+      const rec = scored[r.index];
+      if (rec && paretoSet.has(rec.id ?? "")) dbMap.set(rec.id ?? "", r);
+    }
+    dbscanById.value = dbMap;
+  }
+
+  // ── KDE 2D ──
+  if (viewDim.value === "2d" && allPts.length >= 3) {
+    kdeData.value = kde2d(allPts.map(p => [p.x, p.y] as [number, number]));
+  } else {
+    kdeData.value = null;
   }
 
   // ── 椭球距离分析 ──
@@ -166,7 +237,7 @@ function run() {
     ellipsoidList.value = paretoRecs.map((rec, i) => {
       const dist = ma.distances[i] ?? 0;
       const normScore = maxD > minD ? Math.round(100 - (dist - minD) / (maxD - minD) * 100) : 50;
-      const level = normScore >= 70 ? 'High' : normScore >= 40 ? 'Mid' : 'Low';
+      const level: 'close' | 'mid' | 'far' = normScore >= 70 ? 'close' : normScore >= 40 ? 'mid' : 'far';
       return { id: rec.id??"", score: `${rec.score!.cost}g/${rec.score!.cycles}c/${rec.score!.area}a/${rec.score!.instructions}i`, dist: Math.round(dist*10)/10, normScore, level };
     }).sort((a, b) => b.normScore - a.normScore);
 
@@ -219,7 +290,7 @@ function run() {
   }
 }
 
-interface EllipsoidEntry { id: string; score: string; dist: number; normScore: number; level: string }
+interface EllipsoidEntry { id: string; score: string; dist: number; normScore: number; level: 'close' | 'mid' | 'far' }
 const ellipsoidList = ref<EllipsoidEntry[]>([]);
 const ellipseGeo = ref<Ellipse2D | null>(null);
 const ellPts = ref<{ x: number; y: number; dist: number; id: string }[]>([]);
@@ -295,11 +366,14 @@ function initThreeJS() {
     let knn: KnnResult | undefined;
 
     if (p.isPareto) {
-      knn = knnById.value.get(p.id);
-      const iso = knn?.isolation ?? 50;
-      const r = isolationRadius(iso);
-      geo = r > 1.0 ? new THREE.SphereGeometry(0.07 * r, 8, 8) : geoBigBase;
-      mat = knnMat(iso);
+      const lof = lofById.value.get(p.id);
+      if (lof) {
+        const hex = lofColor(lof.lof).replace("#", "0x");
+        mat = new THREE.MeshBasicMaterial({ color: parseInt(hex) });
+      } else {
+        mat = new THREE.MeshBasicMaterial({ color: 0xc9a84c }); // fallback gold
+      }
+      geo = geoBigBase;
     } else {
       geo = geoSmall;
       mat = matGray;
@@ -361,9 +435,15 @@ watch(hoveredId, (newId) => {
     found.scale.set(1.8,1.8,1.8);
     hovered = found;
     const s = found.userData.score;
-    const k = found.userData.knn as KnnResult | undefined;
-    const knnTag = k ? knnTagText(k) : "";
-    threeHoverText.value = s ? `${s.cost}g/${s.cycles}c/${s.area}a/${s.instructions}i${knnTag}` : "";
+    const lof = lofById.value.get(found.userData.id);
+    const d = depthById.value.get(found.userData.id);
+    const db = dbscanById.value.get(found.userData.id);
+    const tags: string[] = [];
+    if (lof) tags.push(`LOF:${lof.lof}`);
+    if (d && d.depth > 0) tags.push(`Tier:${d.depth}`);
+    if (db && db.cluster >= 0) tags.push(`Type${db.cluster + 1}`);
+    const tagStr = tags.length > 0 ? ` | ${tags.join(' ')}` : '';
+    threeHoverText.value = s ? `${s.cost}g/${s.cycles}c/${s.area}a/${s.instructions}i${tagStr}` : "";
   }
 });
 
@@ -388,9 +468,15 @@ watch(hoveredId, (newId) => {
         obj.material = matHover;
         obj.scale.set(1.8,1.8,1.8);
         const s = obj.userData.score;
-        const k = obj.userData.knn as KnnResult | undefined;
-        const knnTag = k ? knnTagText(k) : "";
-        threeHoverText.value = s ? `${s.cost}g/${s.cycles}c/${s.area}a/${s.instructions}i${knnTag}` : "";
+        const lof = lofById.value.get(obj.userData.id);
+        const d = depthById.value.get(obj.userData.id);
+        const db = dbscanById.value.get(obj.userData.id);
+        const tags: string[] = [];
+        if (lof) tags.push(`LOF:${lof.lof}`);
+        if (d && d.depth > 0) tags.push(`Tier:${d.depth}`);
+        if (db && db.cluster >= 0) tags.push(`Type${db.cluster + 1}`);
+        const tagStr = tags.length > 0 ? ` | ${tags.join(' ')}` : '';
+        threeHoverText.value = s ? `${s.cost}g/${s.cycles}c/${s.area}a/${s.instructions}i${tagStr}` : "";
         hoveredId.value = obj.userData.id ?? null;
       }
     }
@@ -421,8 +507,8 @@ const c = computed(() => chart.value!);
 function hlPointId(pid:string|null){ hoveredId.value=pid; }
 function knnColorForId(pid: string | undefined): string {
   if (!pid) return '#c9a84c';
-  const r = knnById.value.get(pid);
-  return r ? isolationColor(r.isolation) : '#c9a84c';
+  const r = lofById.value.get(pid);
+  return r ? lofColor(r.lof) : '#c9a84c';
 }
 function knnTagText(k: KnnResult): string {
   const levelMap: Record<string, string> = {
@@ -459,9 +545,10 @@ function knnTagText(k: KnnResult): string {
     <div class="ap-legend">
       <span class="leg-item"><span class="leg-dot" style="color:#c44b3c">—</span> {{ t('hull_legend_curve') }}</span>
       <span class="leg-item"><span class="leg-dot" style="color:#c9a84c">●</span> {{ t('hull_legend_point') }}</span>
-      <span class="leg-item"><span class="leg-dot" style="color:#5a9e6f">●</span> {{ t('knn_clustered') }}</span>
-      <span class="leg-item"><span class="leg-dot" style="color:#ffb703">●</span> {{ t('knn_normal') }}</span>
-      <span class="leg-item"><span class="leg-dot" style="color:#c44b3c">●</span> {{ t('knn_isolated') }}</span>
+      <span class="leg-item" title="How unique this solution is compared to nearby ones"><span class="leg-dot" style="color:#5aae6f">●</span> Common</span>
+      <span class="leg-item" title="Mildly unusual strategy"><span class="leg-dot" style="color:#f59e0b">●</span> Distinct</span>
+      <span class="leg-item" title="Rare, potentially innovative approach"><span class="leg-dot" style="color:#ef4444">●</span> Rare</span>
+      <span class="leg-item" style="cursor:pointer" @click="showKDE=!showKDE"><span :style="{color: showKDE?'#06b6d4':'#5a5245'}">⬤</span> Heatmap</span>
       <span class="leg-item">{{ t('hull_legend_scale') }}</span>
       <span class="leg-item leg-note">{{ t('hull_legend_note') }}</span>
     </div>
@@ -476,11 +563,10 @@ function knnTagText(k: KnnResult): string {
             <span style="color:#ff6666">● Red = {{ METRIC_LABELS[dimX]||dimX }}</span>
             <span style="color:#66ff66">● Green = {{ METRIC_LABELS[dimY]||dimY }}</span>
             <span style="color:#6688ff">● Blue = {{ METRIC_LABELS[dimZ]||dimZ }}</span>
-            <span style="color:#5a9e6f">→ {{ t('three_arrows') }}</span>
-            <span>| KNN:</span>
-            <span style="color:#5a9e6f">● {{ t('knn_clustered') }}</span>
-            <span style="color:#ffb703">● {{ t('knn_normal') }}</span>
-            <span style="color:#c44b3c">● {{ t('knn_isolated') }}</span>
+            <span>| LOF:</span>
+            <span style="color:#5aae6f">● Common</span>
+            <span style="color:#f59e0b">● Distinct</span>
+            <span style="color:#ef4444">● Rare</span>
           </div>
         </div>
         <template v-else-if="chart">
@@ -495,6 +581,15 @@ function knnTagText(k: KnnResult): string {
           <text :x="10" :y="svgH/2" text-anchor="middle" fill="#807860" font-size="10" font-family="Cinzel" transform="rotate(-90,10,210)">
             {{ viewDim==='nd' ? 'PC2 ('+ndVarPct[1]+'%)' : viewDim==='3d' ? 'iso-Z' : METRIC_LABELS[dimY]||dimY }}
           </text>
+          <!-- KDE heatmap (smooth canvas-rendered image) -->
+          <image v-if="showKDE && kdeData"
+            :x="toSx(kdeData.xMin, c.pxMin, c.pxMax)"
+            :y="toSy(kdeData.yMax, c.pyMin, c.pyMax)"
+            :width="toSx(kdeData.xMax, c.pxMin, c.pxMax) - toSx(kdeData.xMin, c.pxMin, c.pxMax)"
+            :height="toSy(kdeData.yMin, c.pyMin, c.pyMax) - toSy(kdeData.yMax, c.pyMin, c.pyMax)"
+            :href="kdeData.dataUrl"
+            opacity="0.45"
+          />
           <!-- 全部点 -->
           <circle v-for="(p,i) in chart.all" :key="'a'+i" :cx="toSx(p.x,c.pxMin,c.pxMax)" :cy="toSy(p.y,c.pyMin,c.pyMax)" r="1.5" fill="#3a3228" opacity="0.5"/>
           <!-- 凸包曲线 -->
@@ -526,7 +621,7 @@ function knnTagText(k: KnnResult): string {
         <div class="ap-list-body">
           <div v-for="r in recs" :key="r.id" class="ap-card" :class="{hl:hoveredId===r.id}" @mouseenter="hlPointId(r.id)" @mouseleave="hlPointId(null)">
             <div class="ap-card-score"><span v-if="r.record.categoryIds && r.record.categoryIds.length>0" class="leader-tag">[Leader]</span> {{ r.record.score!.cost }}g / {{ r.record.score!.cycles }}c / {{ r.record.score!.area }}a / {{ r.record.score!.instructions }}i <span class="overall-pct">[{{ r.overallScore>0?'+':'' }}{{ r.overallScore }}]</span>
-              <span v-if="knnById.has(r.id)" class="knn-badge" :class="'knn-'+knnById.get(r.id)!.level" :title="t('knn_tooltip')">{{ t('knn_label') }}{{ knnById.get(r.id)!.isolation }}%</span>
+              <span v-if="lofById.has(r.id)" class="lof-badge" :class="'lof-'+lofById.get(r.id)!.level" :title="'Uniqueness (LOF): '+lofById.get(r.id)!.lof">{{ lofById.get(r.id)!.level === 'normal' ? 'COMMON' : lofById.get(r.id)!.level === 'mild' ? 'DISTINCT' : 'RARE' }} {{ lofById.get(r.id)!.lof }}</span>
             </div>
             <div class="ap-card-dims">
               <span v-for="d in r.dims" :key="d.key" class="ap-dim-chip"
@@ -575,7 +670,7 @@ function knnTagText(k: KnnResult): string {
               <div v-for="e in ellipsoidList" :key="e.id" class="ap-card" :class="{hl:ellHoverId===e.id}" @mouseenter="ellHoverId=e.id" @mouseleave="ellHoverId=null">
                 <div class="ap-card-score">{{ e.score }}</div>
                 <div class="ap-card-dims">
-                  <span class="ap-dim-chip" :class="e.normScore>=70?'dim-strong':e.normScore>=40?'dim-medium':'dim-weak'">dist={{ e.dist }} · {{ e.normScore }}% {{ t('ell_optimizable_label') }}</span>
+                  <span class="ap-dim-chip" :class="e.level==='close'?'dim-strong':e.level==='mid'?'dim-medium':'dim-weak'">dist={{ e.dist }} · {{ t('ell_level_'+e.level) }}</span>
                 </div>
               </div>
             </div>
@@ -590,7 +685,7 @@ function knnTagText(k: KnnResult): string {
 .ap-root { padding: 14px 18px; max-width: 1200px; margin: 0 auto; color: #e0d8c8; font-family: 'JetBrains Mono', monospace; }
 .ap-top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
 .ap-title { color: #c9a84c; font-size: 0.8rem; font-weight: 700; font-family: 'Cinzel', serif; letter-spacing: 2px; }
-.ap-meta { color: #807860; font-size: 0.6rem; }
+.ap-meta { color: #807860; font-size: 0.66rem; }
 .ap-help {
   color: #c9a84c; font-size: 0.62rem; cursor: pointer;
   border: 1px solid rgba(201,168,76,0.25); border-radius: 50%;
@@ -602,7 +697,7 @@ function knnTagText(k: KnnResult): string {
 .ap-help-box {
   background: rgba(0,0,0,0.25); border: 1px solid rgba(201,168,76,0.2);
   border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;
-  font-size: 0.58rem; color: #b0a080; line-height: 1.6;
+  font-size: 0.64rem; color: #b0a080; line-height: 1.6;
   max-height: 300px; overflow-y: auto; white-space: pre-line;
   animation: fadeDown 0.25s ease-out;
 }
@@ -615,7 +710,7 @@ function knnTagText(k: KnnResult): string {
 }
 .ap-pca-note b { color: #c9a84c; }
 .ap-ctls { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
-.ap-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 0.55rem; color: #807860; }
+.ap-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 0.62rem; color: #807860; }
 .leg-item { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
 .leg-dot { font-size: 0.7rem; line-height: 1; }
 .leg-note { color: #6a6058; font-style: italic; }
@@ -632,7 +727,7 @@ function knnTagText(k: KnnResult): string {
 .view-mode-sel { display: flex; gap: 0; }
 .vm-btn {
   background: none; border: 1px solid rgba(255,255,255,0.08); color: #807860;
-  padding: 3px 10px; font-family: 'JetBrains Mono', monospace; font-size: 0.58rem;
+  padding: 3px 10px; font-family: 'JetBrains Mono', monospace; font-size: 0.64rem;
   cursor: pointer; transition: all 0.2s ease;
 }
 .vm-btn:first-child { border-radius: 6px 0 0 6px; }
@@ -656,7 +751,7 @@ function knnTagText(k: KnnResult): string {
   font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
   pointer-events: none; z-index: 10;
 }
-.three-axes-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.55rem; color: #807860; font-family: 'JetBrains Mono', monospace; padding: 6px 8px; }
+.three-axes-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.62rem; color: #807860; font-family: 'JetBrains Mono', monospace; padding: 6px 8px; }
 .ap-chart-empty { color: #807860; font-size: 0.7rem; text-align: center; padding: 80px 0; }
 
 .ap-list {
@@ -669,9 +764,9 @@ function knnTagText(k: KnnResult): string {
   font-size: 0.64rem; color: #c9a84c; font-family: 'Cinzel', serif;
   letter-spacing: 1px; flex-shrink: 0;
 }
-.ap-list-hint { color: #807860; font-size: 0.52rem; font-family: 'JetBrains Mono', monospace; letter-spacing: 0; }
+.ap-list-hint { color: #807860; font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; letter-spacing: 0; }
 .ap-list-body { flex: 1; overflow-y: auto; padding: 4px 8px; }
-.ap-empty { color: #807860; font-size: 0.6rem; font-style: italic; padding: 12px; text-align: center; }
+.ap-empty { color: #807860; font-size: 0.66rem; font-style: italic; padding: 12px; text-align: center; }
 
 .ap-card {
   padding: 7px 8px; border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -683,15 +778,24 @@ function knnTagText(k: KnnResult): string {
 .leader-tag { color: #ffb703; font-weight: 700; margin-right: 2px; }
 .overall-pct { color: #5aae6f; font-weight: 700; font-size: 0.7rem; margin-left: auto; }
 .ap-card-dims { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
-.ap-dim-chip { font-size: 0.55rem; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+.ap-dim-chip { font-size: 0.62rem; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
 .dim-strong { background: rgba(90,174,111,0.1); color: #5aae6f; border: 1px solid rgba(90,174,111,0.2); }
 .dim-medium { background: rgba(201,168,76,0.06); color: #c9a84c; border: 1px solid rgba(201,168,76,0.15); }
 .dim-weak { background: rgba(212,90,74,0.08); color: #e0d8c8; border: 1px solid rgba(212,90,74,0.15); }
 
-.knn-badge { font-size: 0.55rem; padding: 2px 6px; border-radius: 4px; margin-left: 4px; font-weight: 600; }
+.knn-badge { font-size: 0.62rem; padding: 2px 6px; border-radius: 4px; margin-left: 4px; font-weight: 600; }
 .knn-clustered { background: rgba(90,174,111,0.1); color: #5aae6f; border: 1px solid rgba(90,174,111,0.2); }
 .knn-normal { background: rgba(245,158,11,0.08); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
 .knn-isolated { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+
+.depth-badge { font-size: 0.62rem; padding: 2px 6px; border-radius: 4px; margin-left: 2px; font-weight: 700; }
+.depth-pareto { background: rgba(129,140,248,0.12); color: #818cf8; border: 1px solid rgba(129,140,248,0.25); }
+.depth-layer { background: rgba(255,255,255,0.03); color: #706858; border: 1px solid rgba(255,255,255,0.06); }
+
+.lof-badge { font-size: 0.62rem; padding: 2px 6px; border-radius: 4px; margin-left: 2px; font-weight: 600; }
+.lof-normal { background: rgba(90,174,111,0.08); color: #5aae6f; border: 1px solid rgba(90,174,111,0.15); }
+.lof-mild { background: rgba(245,158,11,0.08); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
+.lof-outlier { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
 
 .ellipsoid-section {
   margin-top: 14px; background: rgba(26,23,18,0.5);
@@ -705,12 +809,12 @@ function knnTagText(k: KnnResult): string {
 }
 .ellipsoid-header:hover { background: rgba(201,168,76,0.04); }
 .ellipsoid-title { color: #c9a84c; font-size: 0.7rem; font-weight: 600; font-family: 'Cinzel', serif; letter-spacing: 1px; }
-.ellipsoid-desc-inline { color: #807860; font-size: 0.52rem; flex: 1; }
-.ellipsoid-toggle { color: #807860; font-size: 0.55rem; }
+.ellipsoid-desc-inline { color: #807860; font-size: 0.6rem; flex: 1; }
+.ellipsoid-toggle { color: #807860; font-size: 0.62rem; }
 .ellipsoid-body { border-top: 1px solid rgba(255,255,255,0.05); padding: 10px 12px; }
 .ell-chart-wrap {
   background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.05);
   border-radius: 8px; padding: 8px;
 }
-.ellipsoid-empty { color: #807860; font-size: 0.6rem; font-style: italic; padding: 8px; }
+.ellipsoid-empty { color: #807860; font-size: 0.66rem; font-style: italic; padding: 8px; }
 </style>

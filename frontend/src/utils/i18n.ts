@@ -9,22 +9,22 @@ watch(locale, (v) => localStorage.setItem("lang", v));
 const dict: Record<Locale, Record<string, string>> = {
   en: {
     brand_title: "OPUS MAGNUM",
-    brand_sub: "LEADERBOARD TERMINAL",
-    section_query: "PUZZLE SEARCH",
-    placeholder_search: "Type puzzle name (e.g. Mist)...",
-    btn_execute: "SEARCH",
+    brand_sub: "RESEARCH TERMINAL",
+    section_query: "REAGENT SEARCH",
+    placeholder_search: "Search reagent by name (e.g. Mist)...",
+    btn_execute: "QUERY",
     btn_refresh: "REFRESH",
-    section_diag: "DIAGNOSTICS",
+    section_diag: "TERMINAL STATUS",
     status_syncing: "SYNCING",
     status_fetching: "FETCHING",
     status_error: "ERROR",
-    status_ready: "READY",
-    cache_label: "CACHE:",
-    breadcrumb: "Alchemical Archives / Data Flow / Record Grid",
-    sys_online: "SYS: ONLINE",
-    welcome_line1: "> THE ALCHEMICAL ENGINE AWAITS.",
-    welcome_line2: "> SPEAK A PUZZLE NAME TO BEGIN...",
-    mode_record: "RECORD",
+    status_ready: "ONLINE",
+    cache_label: "ARCHIVE:",
+    breadcrumb: "Academy Archives / Research Data / Solution Grid",
+    sys_online: "TERMINAL: ONLINE",
+    welcome_line1: "> THE RESEARCH TERMINAL AWAITS.",
+    welcome_line2: "> ENTER A REAGENT NAME TO BEGIN...",
+    mode_record: "RECORDS",
     mode_frontier: "FRONTIER",
     mode_pareto: "PARETO",
     mode_analysis: "ANALYSIS",
@@ -97,13 +97,15 @@ const dict: Record<Locale, Record<string, string>> = {
     hull_legend_point: "Pareto record",
     hull_legend_scale: "+50 = optimizable · −50 = stable",
     hull_legend_note: "(2D projections — checks each dimension-pair frontier)",
-    ell_legend_1sigma: "Within 1σ — balanced, room to specialize",
-    ell_legend_2sigma: "1σ–2σ — moderately specialized",
-    ell_legend_outside: "Outside 2σ — extreme, hard to improve",
-    ell_legend_centroid: "Centroid",
-    ell_ranking_title: "Optimizability Ranking",
-    ell_optimizable_label: "optimizable",
-    ell_legend_note: "(n-D ellipsoid — Mahalanobis distance from centroid)",
+    ell_legend_1sigma: "Within 1σ — typical approach (67%)",
+    ell_legend_2sigma: "1σ–2σ — somewhat unusual",
+    ell_legend_outside: "Outside 2σ — rare strategy",
+    ell_legend_centroid: "Average",
+    ell_ranking_title: "How far from the crowd?",
+    ell_level_close: "close to avg",
+    ell_level_mid: "mid distance",
+    ell_level_far: "far from avg",
+    ell_legend_note: "(Mahalanobis distance — how unusual this solution is vs the group)",
     three_arrows: "Green arrows = optimization direction (toward balance)",
     pca_note: "<b>What PCA shows:</b> All {n} metrics compressed to 2 dimensions.<br/>• Close points = similar across <b>all</b> metrics.<br/>• Clusters = solution types. Gaps = unexplored types.<br/>• PC1={pc1}% of variance captured by X axis alone.<br/><b>How to use:</b> Pareto far from cluster = extreme specialist. Center = balanced.",
     ellipsoid_title: "Ellipsoid Model",
@@ -140,15 +142,13 @@ const dict: Record<Locale, Record<string, string>> = {
    Appears when a record has at least one leaderboard category (CG, CI, TC, etc.).
    These are "champion" solutions that have earned specific category titles.
 
-6. ELLIPSOID MODEL (bottom section)
-   Fits an n-dimensional ellipsoid to all Pareto records using Mahalanobis distance.
-   • 1σ ellipse (green solid)  = 67% of records fall inside this region.
-     Inside = "balanced" solutions with room to specialize in any direction.
-   • 2σ ellipse (yellow dashed) = 95% of records fall inside.
-     Outside = "extreme specialists" — very hard to improve further.
-   • Gold cross (+) = centroid (average Pareto solution).
-     Points closer to it = more "average" = more directions to improve.
-   • Ranking list: each record's distance from centroid. Higher % = closer to center = more optimizable.
+6. DISTANCE FROM THE CROWD (bottom section)
+   Mahalanobis ellipsoid — measures how unusual each Pareto solution is.
+   • 1σ ellipse (green) = 67% of solutions. Inside = "typical" approach.
+   • 2σ ellipse (yellow) = 95% of solutions. Outside = "unusual" strategy.
+   • Gold cross (+) = centroid (the "average" Pareto solution).
+   • Ranking: close to avg = mainstream strategy. Far from avg = unique approach.
+   This does NOT predict whether you can improve — only how different you are.
 
 7. 3D VIEW [3D]
    • Drag to rotate, scroll to zoom. Hover to see scores.
@@ -169,17 +169,35 @@ TL;DR — HOW TO USE THIS PAGE:
    → Use the ellipsoid ranking → higher % = more balanced = easier to surpass.
    → Search for [Leader] tags → those are the current champions to beat.
 
-9. KNN ISOLATION DETECTION
-   Measures how far each Pareto record is from its k-nearest neighbors across ALL dimensions.
-   • Green clustered (≤33%) = tight group — well-explored region, easy to replicate.
-   • Yellow normal (34-66%) = moderate distance — typical solution density.
-   • Red isolated (67-100%) = far from neighbors — outlier! Unique approach.
-     With [Leader] = tough champion. Without [Leader] = potential optimization target.
-   In 3D: larger sphere = more isolated. Use this to find unusual solutions!`,
+9. HOW TO READ THE NEW METRICS
+
+   ◆ Uniqueness (LOF) — green COMMON / amber DISTINCT / red RARE
+     Think of it like a library:
+     COMMON (<1.2) = this book has many similar neighbors. Mainstream strategy.
+     DISTINCT (1.2–2.0) = unusual approach. Few players do this.
+     RARE (>2.0) = one-of-a-kind. Genius or undiscovered weakness?
+     Hover any point or check the right-side cards for exact scores.
+
+   ◆ Strategy Types (DBSCAN) — hover a 3D point to see "Type1", "Type2"…
+     The tool groups similar solutions automatically.
+     Same Type number = same basic approach. Different Type = different method.
+     No Type = unique strategy that doesn't fit any group.
+
+   ◆ Heatmap (KDE) — 2D chart background (click "Heatmap" in the legend to toggle)
+     Blue/cold areas = few solutions → "blue ocean" where you could shine.
+     Red/hot areas = crowded → harder to stand out, everyone already here.`,
     replay_title: "LIVE REPLAY",
     replay_loading: "Loading engine…",
     replay_sending: "Sending solution…",
     replay_error: "Replay failed",
+    dash_recent: "⏱ Recent",
+    dash_quick: "⚡ Quick Start",
+    dash_step1: "Search a puzzle name in the sidebar →",
+    dash_step2: "Browse records, hover for preview, click ANALYSIS to explore Pareto frontier",
+    dash_step3: "Find a record you can beat → click IMPROVE to see target metrics",
+    dash_step4: "Click ▶ Replay on any record to watch the solution live",
+    pb_filter: "Filter...",
+    pb_no_match: "No matches",
     knn_label: "KNN:",
     knn_clustered: "clustered",
     knn_normal: "normal",
@@ -199,21 +217,21 @@ TL;DR — HOW TO USE THIS PAGE:
   },
   zh: {
     brand_title: "OPUS MAGNUM",
-    brand_sub: "排行榜终端",
-    section_query: "谜题搜索",
-    placeholder_search: "输入谜题名称（例如 Mist）...",
-    btn_execute: "搜索",
+    brand_sub: "研究终端",
+    section_query: "试剂检索",
+    placeholder_search: "输入试剂名称（例如 Mist）...",
+    btn_execute: "查询",
     btn_refresh: "刷新",
-    section_diag: "系统诊断",
+    section_diag: "终端状态",
     status_syncing: "同步中",
     status_fetching: "获取中",
     status_error: "异常",
-    status_ready: "就绪",
-    cache_label: "缓存：",
-    breadcrumb: "炼金档案 / 数据流 / 记录网格",
-    sys_online: "系统：在线",
-    welcome_line1: "> 炼金引擎已就绪。",
-    welcome_line2: "> 输入谜题名称开始查询...",
+    status_ready: "在线",
+    cache_label: "档案：",
+    breadcrumb: "学院档案 / 研究数据 / 解法网格",
+    sys_online: "终端：在线",
+    welcome_line1: "> 研究终端已就绪。",
+    welcome_line2: "> 输入试剂名称开始查询...",
     mode_record: "记录",
     mode_frontier: "前沿",
     mode_pareto: "帕累托",
@@ -287,13 +305,15 @@ TL;DR — HOW TO USE THIS PAGE:
     hull_legend_point: "帕累托记录",
     hull_legend_scale: "+50 = 可优化 · −50 = 已稳定",
     hull_legend_note: "（2D 投影 — 逐维度对检查前沿边缘）",
-    ell_legend_1sigma: "1σ 内 — 均衡，有专精空间",
-    ell_legend_2sigma: "1σ–2σ — 中等专精",
-    ell_legend_outside: "2σ 外 — 极端，难以优化",
-    ell_legend_centroid: "质心",
-    ell_ranking_title: "可优化性排名",
-    ell_optimizable_label: "可优化",
-    ell_legend_note: "（n 维椭球 — 马氏距离到质心）",
+    ell_legend_1sigma: "1σ 内 — 主流思路 (67%)",
+    ell_legend_2sigma: "1σ–2σ — 有些不寻常",
+    ell_legend_outside: "2σ 外 — 罕见策略",
+    ell_legend_centroid: "平均",
+    ell_ranking_title: "离大部队有多远？",
+    ell_level_close: "接近平均",
+    ell_level_mid: "中等距离",
+    ell_level_far: "远离平均",
+    ell_legend_note: "（马氏距离 — 这个解法跟大家差多少）",
     three_arrows: "绿色箭头 = 优化方向（指向更均衡的位置）",
     pca_note: "<b>PCA 显示什么：</b>全部 {n} 个指标压缩到 2 个维度。<br/>• 靠近的点 = 在<b>所有</b>指标上都相似。<br/>• 聚类 = 解法类型。聚类之间的空白 = 未探索类型。<br/>• PC1={pc1}% 的方差被 X 轴单独捕获。<br/><b>如何使用：</b>远离主聚类的帕累托点 = 极端专精。中心点 = 均衡通用。",
     ellipsoid_title: "椭球模型",
@@ -330,14 +350,13 @@ TL;DR — HOW TO USE THIS PAGE:
    出现在至少拥有一个分类榜头衔（CG、CI、TC 等）的记录上。
    这些是获得特定分类冠军称号的解法。
 
-6. 椭球模型（下方）
-   用马氏距离对所有帕累托记录拟合 n 维椭球。
-   • 1σ 椭圆（绿色实线）= 67% 的记录落在内部。
-     内部 = "均衡型"解法，有向各方向专精的空间。
-   • 2σ 椭圆（黄色虚线）= 95% 的记录落在内部。
-     外部 = "极端专精型" —— 非常难以继续优化。
-   • 金色十字 (+) = 质心（平均帕累托解）。离它越近 = 越"平均" = 可优化方向越多。
-   • 排名表：每条记录到质心的距离。百分比越高 = 离中心越近 = 越可优化。
+6. 离大部队有多远？（下方椭球模型）
+   马氏距离椭球——衡量每条帕累托解法有多"不寻常"。
+   • 1σ 椭圆（绿色）= 67% 的解法在内部。内部 = "主流"思路。
+   • 2σ 椭圆（黄色）= 95% 的解法在内部。外部 = "非主流"策略。
+   • 金色十字 (+) = 质心（"平均"帕累托解）。
+   • 排名：离平均近 = 主流策略。离平均远 = 独特思路。
+   这不预测你能否优化——只告诉你跟别人差多大。
 
 7. 3D 视图 [3D]
    • 拖拽旋转，滚轮缩放。悬停看分数。
@@ -358,17 +377,35 @@ TL;DR — HOW TO USE THIS PAGE:
    → 用椭球排名 → 百分比越高 = 越均衡 = 越容易被超越。
    → 搜索 [Leader] 标签 → 当前需要击败的冠军。
 
-9. KNN 隔离检测
-   衡量每条帕累托记录在所有维度中离 k-近邻的平均距离。
-   • 🟢 聚集 (≤33%) = 紧密聚类 — 已被充分探索的区域，容易复现。
-   • 🟡 常态 (34-66%) = 中等距离 — 典型解法密度。
-   • 🔴 孤立 (67-100%) = 远离邻居 — 离群值！独特思路。
-     带 [Leader] = 极难被击败的冠军。无 [Leader] = 潜在优化突破口。
-   3D 视图中：球体越大 = 越孤立。用这个功能发现独特解法！`,
+9. 新指标怎么看
+
+   ◆ 独特性 (LOF) — 绿 COMMON / 黄 DISTINCT / 红 RARE
+     想象走进图书馆：
+     COMMON (<1.2) = 旁边很多类似的书。主流思路，容易找到。
+     DISTINCT (1.2–2.0) = 少有人想到的路线。
+     RARE (>2.0) = 独一无二。天才突破还是未发现的弱点？
+     悬停任意点或看右侧卡片查看具体分数。
+
+   ◆ 解法类型 (DBSCAN) — 悬停 3D 点查看 "Type1"、"Type2"…
+     工具自动把相似解法归组。
+     同 Type = 同类思路。不同 Type = 完全不同的方法。
+     无 Type = 独一无二的解法，不属于任何组。
+
+   ◆ 热度图 (KDE) — 2D 图背景色（点击图例 "Heatmap" 开关）
+     蓝/冷 = 解法稀少 → "蓝海"，你的解法可能在这里闪耀。
+     红/暖 = 解法密集 → 竞争激烈，大家都在这儿。`,
     replay_title: "实时演算",
     replay_loading: "加载演算引擎…",
     replay_sending: "发送解法数据…",
     replay_error: "演算失败",
+    dash_recent: "⏱ 最近",
+    dash_quick: "⚡ 快速上手",
+    dash_step1: "在侧边栏搜索谜题名称 →",
+    dash_step2: "浏览记录，悬停预览，点击 ANALYSIS 探索帕累托前沿",
+    dash_step3: "找到你能超越的记录 → 点击 IMPROVE 查看目标指标",
+    dash_step4: "点击 ▶ 实时演算 观看解法回放",
+    pb_filter: "筛选...",
+    pb_no_match: "无匹配",
     knn_label: "KNN:",
     knn_clustered: "聚集",
     knn_normal: "常态",
@@ -476,13 +513,15 @@ TL;DR — HOW TO USE THIS PAGE:
     hull_legend_point: "パレート記録",
     hull_legend_scale: "+50 = 最適化可能 · −50 = 安定",
     hull_legend_note: "（2D投影 — 各次元ペアのフロンティアを検査）",
-    ell_legend_1sigma: "1σ内 — バランス型、特化の余地あり",
-    ell_legend_2sigma: "1σ–2σ — 中程度の特化",
-    ell_legend_outside: "2σ外 — 極端、改善困難",
-    ell_legend_centroid: "重心",
-    ell_ranking_title: "最適化可能性ランキング",
-    ell_optimizable_label: "最適化可能",
-    ell_legend_note: "（n次元楕円体 — 重心からのマハラノビス距離）",
+    ell_legend_1sigma: "1σ内 — 主流アプローチ (67%)",
+    ell_legend_2sigma: "1σ–2σ — やや特殊",
+    ell_legend_outside: "2σ外 — 珍しい戦略",
+    ell_legend_centroid: "平均",
+    ell_ranking_title: "平均からどれだけ離れてる？",
+    ell_level_close: "平均に近い",
+    ell_level_mid: "中距離",
+    ell_level_far: "平均から遠い",
+    ell_legend_note: "（マハラノビス距離 — この解法が皆とどれだけ違うか）",
     three_arrows: "緑矢印 = 最適化方向（バランスの取れた位置へ）",
     pca_note: "<b>PCAが見せるもの：</b>全{n}指標を2次元に圧縮。<br/>• 近い点 = <b>全</b>指標で類似。<br/>• クラスタ = 解法タイプ。間隙 = 未探索タイプ。<br/>• PC1={pc1}%の分散をX軸が捕捉。<br/><b>使い方：</b>クラスタから遠いパレート = 極端特化型。中心 = バランス型。",
     ellipsoid_title: "楕円体モデル",
@@ -519,14 +558,13 @@ TL;DR — HOW TO USE THIS PAGE:
    少なくとも1つのカテゴリ（CG, CI, TC等）の首位を獲得した記録に表示。
    特定カテゴリのチャンピオンタイトルを持つ解法。
 
-6. 楕円体モデル（下部）
-   マハラノビス距離を用いて全パレート記録にn次元楕円体を適合。
-   • 1σ楕円（緑実線）= 記録の67%がこの領域内。
-     内部 = 「バランス型」解法、各方向への特化余地あり。
-   • 2σ楕円（黄破線）= 記録の95%が内部。
-     外部 = 「極端特化型」 ― 改善が非常に困難。
-   • 金色十字 (+) = 重心（平均的パレート解）。近いほど「平均的」= 改善方向が多い。
-   • ランキング：各記録の重心からの距離。%が高いほど中心に近く最適化可能。
+6. 平均からどれだけ離れてる？（下部楕円体モデル）
+   マハラノビス距離楕円体——各パレート解法がどれだけ「普通じゃない」かを測る。
+   • 1σ楕円（緑）= 67%の解法が内部。内部 = 「主流」アプローチ。
+   • 2σ楕円（黄）= 95%の解法が内部。外部 = 「特殊」戦略。
+   • 金色十字 (+) = 重心（「平均的」パレート解）。
+   • ランキング：平均に近い = 主流戦略。平均から遠い = ユニークな発想。
+   これは改善できるかどうかの予測ではない——どれだけ違うかだけを示す。
 
 7. 3Dビュー [3D]
    • ドラッグ回転、スクロールズーム。ホバーでスコア表示。
@@ -547,17 +585,35 @@ TL;DR — HOW TO USE THIS PAGE:
    → 楕円体ランキングを活用 → %が高いほどバランス型で超えやすい。
    → [Leader]タグを探す → 打倒すべき現チャンピオン。
 
-9. KNN 孤立検出
-   各パレート記録の全次元における k-近傍との平均距離を測定。
-   • 🟢 密集 (≤33%) = 密なクラスタ — 十分に探索済み、再現容易。
-   • 🟡 通常 (34-66%) = 中程度の距離 — 典型的な解法密度。
-   • 🔴 孤立 (67-100%) = 近傍から遠い — 外れ値！独自の発想。
-     [Leader]付き = 打倒困難なチャンピオン。[Leader]なし = 最適化の突破口。
-   3Dビュー：球が大きいほど孤立度が高い。この機能でユニークな解法を見つけよう！`,
+9. 新しい指標の見方
+
+   ◆ 独自性 (LOF) — 緑 COMMON / 黄 DISTINCT / 赤 RARE
+     図書館に例えると：
+     COMMON (<1.2) = 似た本が周りにたくさん。主流の戦略。
+     DISTINCT (1.2–2.0) = 珍しいアプローチ。
+     RARE (>2.0) = 唯一無二。天才か、見落とされた弱点か。
+     ポイントにホバー、または右側カードで正確なスコアを確認。
+
+   ◆ 戦略タイプ (DBSCAN) — 3Dポイントにホバーして "Type1", "Type2"…
+     ツールが似た解法を自動グループ化。
+     同じType = 同じ基本アプローチ。違うType = 全く異なる方法。
+     Typeなし = どのグループにも属さない独自解法。
+
+   ◆ ヒートマップ (KDE) — 2D図の背景（凡例の"Heatmap"をクリックで切替）
+     青/寒 = 解法が少ない → 「ブルーオーシャン」
+     赤/暖 = 解法が密集 → 競争激しい`,
     replay_title: "ライブ再生",
     replay_loading: "エンジン読込中…",
     replay_sending: "解法データ送信中…",
     replay_error: "再生失敗",
+    dash_recent: "⏱ 最近",
+    dash_quick: "⚡ クイックスタート",
+    dash_step1: "サイドバーでパズル名を検索 →",
+    dash_step2: "記録を閲覧、ホバーでプレビュー、ANALYSISでパレートフロンティアを探索",
+    dash_step3: "超えられる記録を見つける → IMPROVEで目標指標を確認",
+    dash_step4: "▶ 再生ボタンで解法をライブ視聴",
+    pb_filter: "絞込...",
+    pb_no_match: "一致なし",
     knn_label: "KNN:",
     knn_clustered: "密集",
     knn_normal: "通常",

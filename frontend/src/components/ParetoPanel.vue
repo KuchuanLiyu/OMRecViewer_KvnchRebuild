@@ -253,52 +253,57 @@ function fmtNum(v: number): string { return Number.isInteger(v) ? String(v) : v.
 
 <style scoped>
 .pareto-container { padding: 16px 20px; max-width: 1000px; margin: 0 auto; color: #e0d8c8; font-family: 'JetBrains Mono', monospace; }
-.pareto-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
-.pareto-title { color: #c9a84c; font-size: 0.82rem; font-weight: 700; font-family: 'Cinzel', serif; letter-spacing: 2px; }
-.pareto-sub { color: #807860; font-size: 0.64rem; }
-.hint { color: #807860; text-align: center; padding: 40px; font-size: 0.74rem; }
+.pareto-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.pareto-title { color: #c9a84c; font-size: 0.78rem; font-weight: 700; font-family: 'Cinzel', serif; letter-spacing: 2px; }
+.pareto-sub { color: #807860; font-size: 0.66rem; }
+.hint { color: #807860; text-align: center; padding: 40px; font-size: 0.74rem; font-style: italic; }
 .compare-toggle {
   background: none; border: 1px solid rgba(201,168,76,0.2); color: #c9a84c;
-  font-family: 'Cinzel', serif; font-size: 0.62rem; padding: 4px 12px; border-radius: 6px;
+  font-family: 'Cinzel', serif; font-size: 0.66rem; padding: 5px 14px; border-radius: 20px;
   cursor: pointer; margin-left: auto; letter-spacing: 1px;
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
 }
-.compare-toggle.active { background: rgba(201,168,76,0.12); color: #e2c96e; }
-.compare-toggle:hover { background: rgba(201,168,76,0.12); color: #e2c96e; }
+.compare-toggle.active { background: rgba(201,168,76,0.15); color: #e2c96e; border-color: rgba(201,168,76,0.4); }
+.compare-toggle:hover { background: rgba(201,168,76,0.1); }
 
 .group-card {
   background: rgba(26,23,18,0.5); border: 1px solid rgba(255,255,255,0.06);
   border-radius: 10px; margin-bottom: 8px; overflow: hidden;
+  animation: fadeUp 0.3s ease-out both;
 }
+.group-card:nth-child(1) { animation-delay: 0.02s; }
+.group-card:nth-child(2) { animation-delay: 0.05s; }
+.group-card:nth-child(3) { animation-delay: 0.08s; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .group-header {
-  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  display: flex; align-items: center; gap: 6px; padding: 9px 14px;
   cursor: pointer; user-select: none; font-size: 0.7rem;
   transition: background 0.15s ease;
 }
 .group-header:hover { background: rgba(201,168,76,0.04); }
 .group-arrow { color: #807860; font-size: 0.5rem; transition: transform 0.2s ease; }
 .group-sig { color: #5aae6f; font-weight: 600; }
-.group-count { color: #c9a84c; font-size: 0.64rem; }
-.group-desc { color: #807860; font-size: 0.6rem; }
-.group-body { border-top: 1px solid rgba(255,255,255,0.05); padding: 6px 12px 8px; }
+.group-count { color: #c9a84c; font-size: 0.62rem; }
+.group-desc { color: #807860; font-size: 0.64rem; }
+.group-body { border-top: 1px solid rgba(255,255,255,0.05); padding: 8px 14px 10px; }
 
 .entry-row {
   display: grid; grid-template-columns: 260px 1fr 90px; align-items: center;
-  gap: 8px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
-  font-size: 0.66rem; cursor: pointer; border-radius: 4px;
-  transition: background 0.15s ease;
+  gap: 8px; padding: 5px 4px; border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 0.66rem; cursor: pointer; border-radius: 6px;
+  transition: all 0.15s ease;
 }
-.entry-row:hover { background: rgba(201,168,76,0.03); }
-.entry-row.selected { background: rgba(201,168,76,0.06); border-color: rgba(201,168,76,0.2); }
+.entry-row:hover { background: rgba(201,168,76,0.04); }
+.entry-row.selected { background: rgba(201,168,76,0.08); box-shadow: inset 2px 0 0 #c9a84c; }
 .entry-row:last-child { border-bottom: none; }
 .compare-cb { margin: 0; accent-color: #c9a84c; cursor: pointer; }
 .entry-score { color: #e0d8c8; font-size: 0.64rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .entry-tips { display: flex; gap: 3px; justify-content: flex-start; }
-.tip-badge { background: rgba(90,174,111,0.1); color: #e0d8c8; border: 1px solid rgba(90,174,111,0.2); border-radius: 4px; padding: 2px 5px; font-size: 0.58rem; white-space: nowrap; }
+.tip-badge { background: rgba(90,174,111,0.1); color: #e0d8c8; border: 1px solid rgba(90,174,111,0.2); border-radius: 4px; padding: 2px 5px; font-size: 0.64rem; white-space: nowrap; }
 .tip-delta { color: #5aae6f; font-weight: 600; }
-.tip-none { color: #5aae6f; font-size: 0.58rem; }
+.tip-none { color: #5aae6f; font-size: 0.64rem; }
 .entry-upgrades { display: flex; gap: 3px; justify-content: flex-end; }
-.upgrade-tag { color: #e0d8c8; font-size: 0.58rem; background: rgba(201,168,76,0.08); border: 1px solid rgba(201,168,76,0.2); border-radius: 4px; padding: 2px 5px; white-space: nowrap; }
+.upgrade-tag { color: #e0d8c8; font-size: 0.64rem; background: rgba(201,168,76,0.08); border: 1px solid rgba(201,168,76,0.2); border-radius: 4px; padding: 2px 5px; white-space: nowrap; }
 
 .compare-panel {
   margin: 6px 0 10px; padding: 10px 12px; background: rgba(0,0,0,0.2);
@@ -309,14 +314,14 @@ function fmtNum(v: number): string { return Number.isInteger(v) ? String(v) : v.
 .compare-table th { color: #807860; font-weight: 400; padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: center; font-family: 'Cinzel', serif; letter-spacing: 1px; }
 .compare-table th:first-child { text-align: left; }
 .compare-table td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.04); text-align: center; }
-.dim-name { color: #807860; text-align: left !important; font-size: 0.6rem; }
+.dim-name { color: #807860; text-align: left !important; font-size: 0.66rem; }
 .val-cur { color: #c9a84c; font-weight: 600; font-size: 0.62rem; }
-.val-up { color: #807860; font-size: 0.6rem; }
+.val-up { color: #807860; font-size: 0.66rem; }
 .val-up.need-change { color: #e0d8c8; font-weight: 600; }
-.col-cur { color: #c9a84c; font-size: 0.6rem; }
-.col-up { color: #5aae6f; font-size: 0.6rem; }
-.delta { color: #5aae6f; font-size: 0.58rem; font-weight: 600; }
-.keep { color: #5a5245; font-size: 0.6rem; }
+.col-cur { color: #c9a84c; font-size: 0.66rem; }
+.col-up { color: #5aae6f; font-size: 0.66rem; }
+.delta { color: #5aae6f; font-size: 0.64rem; font-weight: 600; }
+.keep { color: #5a5245; font-size: 0.66rem; }
 
 .compare-floating {
   position: sticky; top: 8px; z-index: 50;

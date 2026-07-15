@@ -4,12 +4,14 @@ import * as echarts from "echarts";
 import type { OmRecordDTO, OmScoreDTO } from "../types/om";
 import { getRaw, METRIC_LABELS } from "../utils/metrics";
 import { t } from "../utils/i18n";
+import { logInfo, logOk, logFail } from "../utils/logBus";
 
 const props = defineProps<{ allRecords: OmRecordDTO[] }>();
 
 interface MetricDef { key: string; label: string; value: number | null }
 const metrics = ref<MetricDef[]>([]);
 const analyzed = ref(false);
+const dragOver = ref(false);
 
 // ── 从 records 检测可用指标 ──
 function detectMetrics(): MetricDef[] {
@@ -42,6 +44,45 @@ function isDominated(a: OmRecordDTO, b: OmRecordDTO): boolean {
   if (!a.score || !b.score) return false;
   return (b.score.cost <= a.score.cost && b.score.cycles <= a.score.cycles && b.score.area <= a.score.area) &&
          (b.score.cost < a.score.cost || b.score.cycles < a.score.cycles || b.score.area < a.score.area);
+}
+
+async function onDrop(e: DragEvent) {
+  dragOver.value = false;
+  const file = e.dataTransfer?.files?.[0];
+  logInfo(`[Drop] file: ${file?.name ?? 'none'} size: ${file?.size ?? 0}`);
+  if (!file) { logFail("[Drop] No file"); return; }
+  if (!file.name.endsWith(".solution")) { logFail("[Drop] Not a .solution file: " + file.name); return; }
+
+  try {
+    // .solution is binary — read as ArrayBuffer
+    const buf = await file.arrayBuffer();
+    logOk(`[Drop] Read ${buf.byteLength} bytes`);
+
+    // Parse metrics from filename or content — each dimension independently
+    const name = file.name;
+    const raw = new TextDecoder("latin1").decode(new Uint8Array(buf, 0, Math.min(500, buf.byteLength)));
+    const source = name + " " + raw;
+    logInfo(`[Drop] ${name} (${buf.byteLength}B)`);
+
+    const dims: Record<string, string> = { cost: "g", cycles: "c", area: "a", instructions: "i", height: "h", width: "w", rate: "r" };
+    let found = 0;
+    for (const [key, letter] of Object.entries(dims)) {
+      const m = source.match(new RegExp(`(\\d+\\.?\\d*)${letter}\\b`, "i"));
+      if (m) {
+        const val = parseFloat(m[1]);
+        const metric = metrics.value.find(x => x.key === key);
+        if (metric) { metric.value = val; found++; }
+      }
+    }
+    if (found > 0) {
+      logOk(`[Drop] Filled ${found} metrics`);
+      analyzed.value = false;
+    } else {
+      logFail("[Drop] No metrics found in filename or content");
+    }
+  } catch (err: any) {
+    logFail(`[Drop] Error: ${err.message}`);
+  }
 }
 
 // ── 分析结果 ──
@@ -286,6 +327,7 @@ function renderChart(userNorm: number[], paretoNorms: { rec: OmRecordDTO; norms:
     </div>
 
     <!-- 输入区 -->
+    <div class="drop-zone" :class="{ hover: dragOver }" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop"><span class="drop-icon">⬡</span><span>Drop .solution file to auto-fill metrics</span></div>
     <div class="input-grid">
       <div v-for="m in metrics" :key="m.key" class="input-slot">
         <label class="input-label">{{ m.label }}</label>
@@ -352,44 +394,59 @@ function renderChart(userNorm: number[], paretoNorms: { rec: OmRecordDTO; norms:
 .improve-container { padding: 20px 24px; max-width: 960px; margin: 0 auto; color: #e0d8c8; font-family: 'JetBrains Mono', monospace; }
 
 .improve-header { margin-bottom: 18px; }
-.improve-title { display: block; color: #c9a84c; font-size: 0.88rem; font-weight: 700; font-family: 'Cinzel', serif; letter-spacing: 2px; margin-bottom: 4px; }
+.improve-title { display: block; color: #c9a84c; font-size: 0.78rem; font-weight: 700; font-family: 'Cinzel', serif; letter-spacing: 2px; margin-bottom: 4px; }
 .improve-sub { color: #807860; font-size: 0.66rem; }
 
 .legend-box {
-  display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
-  padding: 10px 14px; background: rgba(0,0,0,0.2);
-  border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
-  font-size: 0.64rem; color: #807860;
+  display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px;
+  padding: 10px 14px; background: rgba(0,0,0,0.15);
+  border: 1px solid rgba(255,255,255,0.05); border-radius: 10px;
+  font-size: 0.66rem; color: #807860;
 }
 .legend-item { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-.legend-dot { font-weight: 700; font-size: 0.66rem; }
+.legend-dot { font-weight: 700; font-size: 0.62rem; }
+
+.drop-zone {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px; margin-bottom: 12px;
+  border: 2px dashed rgba(255,255,255,0.08); border-radius: 10px;
+  color: #706858; font-size: 0.64rem; font-family: 'JetBrains Mono', monospace;
+  transition: all 0.25s ease; cursor: default;
+}
+.drop-zone.hover {
+  border-color: rgba(201,168,76,0.35); background: rgba(201,168,76,0.06);
+  color: #c9a84c;
+}
+.drop-icon { font-size: 1rem; opacity: 0.3; }
+.drop-zone.hover .drop-icon { opacity: 0.7; }
 
 .input-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-.input-slot { display: flex; flex-direction: column; gap: 3px; }
-.input-label { color: #807860; font-size: 0.66rem; font-family: 'Cinzel', serif; letter-spacing: 1px; }
+.input-slot { display: flex; flex-direction: column; gap: 4px; }
+.input-label { color: #807860; font-size: 0.62rem; font-family: 'Cinzel', serif; letter-spacing: 1px; }
 .metric-input {
   background: rgba(0,0,0,0.25); color: #e0d8c8;
-  border: 1px solid rgba(255,255,255,0.08); padding: 8px 10px; border-radius: 6px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid rgba(255,255,255,0.08); padding: 10px 12px; border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; outline: none;
+  transition: all 0.2s ease;
 }
-.metric-input:focus { border-color: #c9a84c; box-shadow: 0 0 0 2px rgba(201,168,76,0.12); }
+.metric-input:focus { border-color: #c9a84c; box-shadow: 0 0 0 3px rgba(201,168,76,0.1); background: rgba(0,0,0,0.35); }
 
 .analyze-btn {
   width: 100%; background: rgba(201,168,76,0.12); color: #e2c96e;
-  border: 1px solid rgba(201,168,76,0.3); padding: 12px; border-radius: 8px;
-  font-weight: 700; font-family: 'Cinzel', serif; font-size: 0.78rem;
+  border: 1px solid rgba(201,168,76,0.3); padding: 12px; border-radius: 10px;
+  font-weight: 700; font-family: 'Cinzel', serif; font-size: 0.74rem;
   letter-spacing: 2px; cursor: pointer; margin-bottom: 18px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.analyze-btn:hover { background: rgba(201,168,76,0.2); color: #fff; border-color: #c9a84c; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(201,168,76,0.2); }
+.analyze-btn:hover:not(:disabled) { background: rgba(201,168,76,0.2); color: #fff; border-color: #c9a84c; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(201,168,76,0.2); }
 .analyze-btn:disabled { opacity: 0.25; cursor: default; transform: none; }
-.hint-text { color: #807860; text-align: center; padding: 40px; font-size: 0.74rem; }
+.hint-text { color: #807860; text-align: center; padding: 40px; font-size: 0.74rem; font-style: italic; }
 
-.results-area { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.pareto-verdict { padding: 12px 16px; border-radius: 8px; font-size: 0.74rem; font-weight: 600; text-align: center; grid-column: 1 / -1; font-family: 'Cinzel', serif; letter-spacing: 1px; }
-.pareto-verdict.is-pareto { background: rgba(90,174,111,0.08); border: 1px solid rgba(90,174,111,0.3); color: #5aae6f; }
-.pareto-verdict.not-pareto { background: rgba(212,90,74,0.08); border: 1px solid rgba(212,90,74,0.3); color: #d45a4a; }
+.results-area { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; animation: fadeUp 0.35s ease-out; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.pareto-verdict { padding: 14px 18px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; text-align: center; grid-column: 1 / -1; font-family: 'Cinzel', serif; letter-spacing: 1px; }
+.pareto-verdict.is-pareto { background: rgba(90,174,111,0.06); border: 1px solid rgba(90,174,111,0.25); color: #5aae6f; }
+.pareto-verdict.not-pareto { background: rgba(212,90,74,0.06); border: 1px solid rgba(212,90,74,0.25); color: #d45a4a; }
 
 .target-info {
   background: rgba(26,23,18,0.5); border: 1px solid rgba(201,168,76,0.2);

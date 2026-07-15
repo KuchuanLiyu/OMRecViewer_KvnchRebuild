@@ -4,7 +4,7 @@ import * as echarts from "echarts";
 import type { OmRecordDTO } from "../types/om";
 import { getRaw, METRIC_LABELS } from "../utils/metrics";
 import { t } from "../utils/i18n";
-import { logInfo, logFail } from "../utils/logBus";
+import { logInfo, logOk, logFail } from "../utils/logBus";
 import ReplayModal from "./ReplayModal.vue";
 
 const props = defineProps<{
@@ -127,27 +127,31 @@ function renderChart(reason: string) {
   chartInstance.setOption({
     tooltip: {
       trigger: "item",
+	      // confine removed for manual positioning
+        position: function(point: any, params: any, dom: any, rect: any, size: any) { return [size.viewSize[0] / 2 - dom.offsetWidth / 2, size.viewSize[1] - dom.offsetHeight + 80]; },
       backgroundColor: "#121620",
       borderColor: "#00b4d8",
-      textStyle: { color: "#e2e8f0", fontFamily: "monospace", fontSize: 11 },
+      textStyle: { color: "#e2e8f0", fontFamily: "monospace", fontSize: 9 },
       formatter: (params: any) => {
-        // 构建表格
+        const colW = 30; // tight column width
+        const cell = (txt: string, color: string, bold?: boolean) =>
+          `<span style="display:inline-block;width:${colW}px;text-align:right;color:${color};${bold?'font-weight:700':''}">${txt}</span>`;
         const lines = [`<b style="color:#00b4d8">${params.name}</b>`, ""];
         // Header
-        lines.push(keys.map(k => `<span style="color:#4e5d78">${METRIC_LABELS[k]}</span>`).join("  "));
+        lines.push(`<span style="display:inline-block;width:38px"></span>` + keys.map(k => cell(METRIC_LABELS[k]||k, "#4e5d78")).join(""));
         // This
-        lines.push(`<span style="color:#00b4d8">This  </span>` + rawThis.map((v, i) => {
+        lines.push(cell("This", "#00b4d8") + rawThis.map((v, i) => {
           const c = v === rawBest[i] ? "#00f5d4" : "#e2e8f0";
-          return `<span style="color:${c}">${fmtVal(v)}</span>`;
-        }).join("  "));
+          return cell(fmtVal(v), c);
+        }).join(""));
         // Median
-        lines.push(`<span style="color:#ffb703">Median</span>` + rawMedian.map(v =>
-          `<span style="color:#ffb703">${fmtVal(v)}</span>`
-        ).join("  "));
+        lines.push(cell("Median", "#ffb703") + rawMedian.map(v =>
+          cell(fmtVal(v), "#ffb703")
+        ).join(""));
         // Best
-        lines.push(`<span style="color:#00f5d4">Best  </span>` + rawBest.map(v =>
-          `<span style="color:#00f5d4">[${fmtVal(v)}]</span>`
-        ).join("  "));
+        lines.push(cell("Best", "#00f5d4") + rawBest.map(v =>
+          cell(`[${fmtVal(v)}]`, "#00f5d4")
+        ).join(""));
         return lines.join("<br>");
       },
     },
@@ -156,7 +160,7 @@ function renderChart(reason: string) {
       shape: "circle",
       center: ["50%", "50%"],
       radius: "60%",
-      axisName: { color: "#4e5d78", fontSize: 10, fontFamily: "monospace" },
+      axisName: { color: "#4e5d78", fontSize: 9, fontFamily: "monospace" },
       splitArea: { areaStyle: { color: ["rgba(0,180,216,0.02)", "rgba(0,180,216,0.04)"] } },
       splitLine: { lineStyle: { color: "#262e3f" } },
       axisLine: { lineStyle: { color: "#262e3f" } },
@@ -217,6 +221,25 @@ function openReplay() {
   showReplay.value = true;
 }
 
+async function downloadSol() {
+  const sol = props.record?.solution;
+  if (!sol) return;
+  try {
+    logInfo("[DL] Fetching solution...");
+    const resp = await fetch(`/api/proxy?url=${encodeURIComponent(sol)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const name = (props.record?.puzzle?.displayName || 'solution').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${name}.solution`; a.click();
+    URL.revokeObjectURL(url);
+    logOk("[DL] Solution downloaded");
+  } catch (e: any) {
+    logFail(`[DL] ${e.message}`);
+  }
+}
+
 function onKeydown(e: KeyboardEvent) { if (e.key === "Escape") emit("close"); }
 watch(() => props.record, (v) => {
   if (v) document.addEventListener("keydown", onKeydown);
@@ -255,9 +278,14 @@ function onPanelLeave() { emit("panelleave"); }
 
       <!-- Author + Date -->
       <div class="meta-bar">
-        <div class="meta-row"><span class="meta-label">{{ t('preview_author') }}</span><span class="meta-value">{{ record.author || "Unknown" }}</span></div>
-        <div class="meta-row"><span class="meta-label">{{ t('preview_updated') }}</span><span class="meta-value">{{ fmtDate(record.lastModified) }}</span></div>
-        <button v-if="record.solution" class="replay-btn" @click="openReplay">▶ {{ t('btn_replay') }}</button>
+        <div class="meta-info">
+          <div class="meta-row"><span class="meta-label">{{ t('preview_author') }}</span><span class="meta-value">{{ record.author || "Unknown" }}</span></div>
+          <div class="meta-row"><span class="meta-label">{{ t('preview_updated') }}</span><span class="meta-value">{{ fmtDate(record.lastModified) }}</span></div>
+        </div>
+        <div class="meta-actions">
+          <button v-if="record.solution" class="replay-btn" @click="openReplay">▶ {{ t('btn_replay') }}</button>
+          <button v-if="record.solution" class="dl-btn" @click="downloadSol" title="Download .solution">⬇</button>
+        </div>
       </div>
 
       <!-- 六维选择器 -->
@@ -327,30 +355,41 @@ function onPanelLeave() { emit("panelleave"); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .meta-bar {
-  display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;
   padding: 10px 12px; background: rgba(0,0,0,0.2);
   border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
 }
+.meta-info { display: flex; gap: 18px; }
 .meta-row { display: flex; gap: 6px; font-size: 0.66rem; }
 .meta-label { color: #807860; font-family: 'Cinzel', serif; letter-spacing: 1px; }
 .meta-value { color: #e0d8c8; }
 
+.meta-actions { display: flex; gap: 6px; }
 .replay-btn {
   background: rgba(201,168,76,0.12); color: #e2c96e; border: 1px solid rgba(201,168,76,0.3);
   padding: 5px 12px; border-radius: 6px; font-family: 'Cinzel', serif;
-  font-size: 0.6rem; cursor: pointer; letter-spacing: 1px;
+  font-size: 0.66rem; cursor: pointer; letter-spacing: 1px;
   min-height: 32px; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  margin-left: auto;
 }
 .replay-btn:hover {
   background: rgba(201,168,76,0.2); color: #fff;
   border-color: #c9a84c; transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(201,168,76,0.2);
 }
+.dl-btn {
+  background: rgba(255,255,255,0.04); color: #807860;
+  border: 1px solid rgba(255,255,255,0.1); padding: 5px 10px;
+  border-radius: 6px; font-size: 0.7rem; cursor: pointer;
+  min-height: 32px; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dl-btn:hover {
+  background: rgba(255,255,255,0.08); color: #e0d8c8;
+  border-color: rgba(255,255,255,0.2); transform: translateY(-1px);
+}
 
 .axis-selectors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 10px; }
 .axis-slot { display: flex; align-items: center; gap: 3px; }
-.slot-num { color: #c9a84c; font-size: 0.6rem; font-weight: 700; min-width: 12px; }
+.slot-num { color: #c9a84c; font-size: 0.66rem; font-weight: 700; min-width: 12px; }
 .axis-dropdown {
   flex: 1; background: rgba(0,0,0,0.2); color: #e0d8c8;
   border: 1px solid rgba(255,255,255,0.08); padding: 4px 5px; border-radius: 6px;
